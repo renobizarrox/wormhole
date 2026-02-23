@@ -1,16 +1,18 @@
-# Build stage
+# Build stage - expects build context = repository root (Coolify)
 FROM node:20-alpine AS builder
+
+ENV NODE_ENV=development
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
+# Copy package files from web/
+COPY web/package*.json ./
 
 # Install dependencies
 RUN npm ci
 
-# Copy source code
-COPY . .
+# Copy web app source (root .dockerignore excludes web/node_modules)
+COPY web/ .
 
 # Build Nuxt (SSR or static)
 RUN npm run build
@@ -21,7 +23,7 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy package files and install production dependencies
-COPY package*.json ./
+COPY web/package*.json ./
 RUN npm ci --only=production
 
 # Copy built application
