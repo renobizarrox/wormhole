@@ -1,11 +1,11 @@
-# Build stage
+# Build stage - expects build context = repository root (Coolify)
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy package files
-COPY package*.json ./
-COPY prisma ./prisma
+# Copy package files and prisma from api/
+COPY api/package*.json ./
+COPY api/prisma ./prisma
 
 # Install dependencies
 RUN npm ci
@@ -14,7 +14,7 @@ RUN npm ci
 RUN npx prisma generate
 
 # Copy source code
-COPY . .
+COPY api/ .
 
 # Build TypeScript
 RUN npm run build
@@ -25,8 +25,8 @@ FROM node:20-alpine
 WORKDIR /app
 
 # Copy package files and install production dependencies only
-COPY package*.json ./
-COPY prisma ./prisma
+COPY api/package*.json ./
+COPY api/prisma ./prisma
 
 RUN npm ci --only=production
 
