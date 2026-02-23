@@ -17,7 +17,7 @@ RUN npx prisma generate
 COPY api/ .
 
 # Build TypeScript
-RUN npm run build
+RUN npx tsc
 
 # Production stage
 FROM node:20-alpine
