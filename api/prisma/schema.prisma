@@ -1,0 +1,380 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  Owner
+  Admin
+  Builder
+  Viewer
+}
+
+enum AppStatus {
+  Draft
+  Published
+  Deprecated
+}
+
+enum AuthType {
+  API_KEY
+  OAUTH2
+  BASIC
+  CUSTOM_HEADER
+}
+
+enum HttpMethod {
+  GET
+  POST
+  PUT
+  PATCH
+  DELETE
+}
+
+enum RetryStrategy {
+  NONE
+  FIXED
+  EXPONENTIAL
+}
+
+enum WorkflowStatus {
+  Draft
+  Active
+  Archived
+}
+
+enum RunStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELED
+}
+
+enum StepRunStatus {
+  QUEUED
+  RUNNING
+  SUCCESS
+  FAILED
+  SKIPPED
+  CANCELED
+}
+
+// Note: ExecutionLog is stored in MongoDB (not PostgreSQL) for fast access
+// LogLevel enum is defined in MongoDB schema, not here
+
+enum TriggerType {
+  MANUAL
+  WEBHOOK
+  CRON
+}
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  memberships   Membership[]
+  auditEvents   AuditEvent[]
+  apps          App[]
+  invitations   Invitation[]
+  connections   Connection[]
+  workflows     Workflow[]
+  triggers      Trigger[]
+  workflowRuns  WorkflowRun[]
+
+  @@map("tenants")
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String  @map("password_hash")
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  memberships        Membership[]
+  auditEvents        AuditEvent[]
+  createdInvitations Invitation[] @relation("InvitationCreatedBy")
+
+  @@map("users")
+}
+
+model Membership {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String   @map("user_id")
+  role      Role     @default(Viewer)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
+  @@index([tenantId])
+  @@index([userId])
+  @@map("memberships")
+}
+
+model AuditEvent {
+  id        String   @id @default(uuid())
+  tenantId  String   @map("tenant_id")
+  userId    String?  @map("user_id")
+  action    String
+  resource  String
+  resourceId String? @map("resource_id")
+  meta      Json?
+  createdAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+  @@map("audit_events")
+}
+
+model Invitation {
+  id               String   @id @default(uuid())
+  tenantId         String   @map("tenant_id")
+  email            String
+  role             Role     @default(Viewer)
+  token            String   @unique
+  expiresAt        DateTime @map("expires_at")
+  acceptedAt       DateTime? @map("accepted_at")
+  createdByUserId  String   @map("created_by_user_id")
+  createdAt        DateTime @default(now())
+
+  tenant      Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  createdBy   User   @relation("InvitationCreatedBy", fields: [createdByUserId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, email])
+  @@index([token])
+  @@map("invitations")
+}
+
+model App {
+  id          String     @id @default(uuid())
+  tenantId    String     @map("tenant_id")
+  key         String
+  name        String
+  vendor      String?
+  category    String?
+  description String?
+  iconUrl     String?    @map("icon_url")
+  status      AppStatus  @default(Draft)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions    AppVersion[]
+  connections Connection[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("apps")
+}
+
+model AppVersion {
+  id             String    @id @default(uuid())
+  appId          String    @map("app_id")
+  version        Int
+  authType       AuthType  @map("auth_type")
+  settingsSchema Json?     @map("settings_schema")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  publishedAt    DateTime?
+
+  app         App          @relation(fields: [appId], references: [id], onDelete: Cascade)
+  actions     Action[]
+  connections Connection[]
+
+  @@unique([appId, version])
+  @@index([appId])
+  @@map("app_versions")
+}
+
+model Action {
+  id               String        @id @default(uuid())
+  appVersionId     String        @map("app_version_id")
+  key              String
+  name             String
+  description      String?
+  method           HttpMethod
+  endpointTemplate String        @map("endpoint_template")
+  headersTemplate  Json?         @map("headers_template")
+  querySchema      Json?         @map("query_schema")
+  pathSchema       Json?         @map("path_schema")
+  bodySchema       Json?         @map("body_schema")
+  outputSchema     Json?         @map("output_schema")
+  retryStrategy    RetryStrategy @default(FIXED) @map("retry_strategy")
+  maxAttempts      Int           @default(3) @map("max_attempts")
+  initialDelayMs   Int           @default(1000) @map("initial_delay_ms")
+  maxDelayMs       Int?          @map("max_delay_ms")
+  timeoutMs        Int           @default(30000) @map("timeout_ms")
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  appVersion AppVersion @relation(fields: [appVersionId], references: [id], onDelete: Cascade)
+  stepRuns   StepRun[]
+
+  @@unique([appVersionId, key])
+  @@index([appVersionId])
+  @@map("actions")
+}
+
+model Connection {
+  id             String   @id @default(uuid())
+  tenantId       String   @map("tenant_id")
+  appId          String   @map("app_id")
+  appVersionId   String?  @map("app_version_id")
+  name           String
+  description    String?
+  authType       AuthType @map("auth_type")
+  config         Json?    @map("config")          // non-secret config (e.g. accountId, region)
+  secretCipher   Bytes    @map("secret_cipher")   // encrypted secret blob (KMS/Vault backed)
+  secretVersion  Int      @default(1) @map("secret_version")
+  isActive       Boolean  @default(true) @map("is_active")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  rotatedAt      DateTime? @map("rotated_at")
+
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  app        App        @relation(fields: [appId], references: [id], onDelete: Cascade)
+  appVersion AppVersion? @relation(fields: [appVersionId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId, appId])
+  @@index([tenantId, appId, isActive])
+  @@map("connections")
+}
+
+model Workflow {
+  id          String          @id @default(uuid())
+  tenantId    String          @map("tenant_id")
+  key         String
+  name        String
+  description String?
+  status      WorkflowStatus  @default(Draft)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions      WorkflowVersion[]
+  triggers      Trigger[]
+  workflowRuns  WorkflowRun[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@map("workflows")
+}
+
+model WorkflowVersion {
+  id               String   @id @default(uuid())
+  workflowId       String   @map("workflow_id")
+  version          Int
+  graph            Json     @map("graph")              // definition of nodes/edges/steps
+  parameterSchema  Json?    @map("parameter_schema")   // JSON Schema for runtime input
+  envConfig        Json?    @map("env_config")         // environment vars + secret refs
+  isLatest         Boolean  @default(false) @map("is_latest")
+  createdAt        DateTime @default(now())
+  publishedAt      DateTime?
+
+  workflow    Workflow    @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowRuns WorkflowRun[]
+
+  @@unique([workflowId, version])
+  @@index([workflowId])
+  @@map("workflow_versions")
+}
+
+model Trigger {
+  id                    String       @id @default(uuid())
+  tenantId              String       @map("tenant_id")
+  workflowId            String       @map("workflow_id")
+  key                   String
+  name                  String
+  description           String?
+  type                  TriggerType
+  isActive              Boolean      @default(true) @map("is_active")
+  manualAllowed         Boolean      @default(false) @map("manual_allowed")
+  webhookPath           String?      @map("webhook_path")
+  webhookSecretCipher   Bytes?       @map("webhook_secret_cipher")
+  webhookSignatureHeader String?     @map("webhook_signature_header")
+  cronExpression        String?      @map("cron_expression")
+  cronTimezone          String?      @map("cron_timezone")
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow     Workflow     @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowRuns WorkflowRun[]
+
+  @@unique([tenantId, key])
+  @@index([tenantId, workflowId])
+  @@index([tenantId, type, isActive])
+  @@map("triggers")
+}
+
+model WorkflowRun {
+  id               String     @id @default(uuid())
+  tenantId         String     @map("tenant_id")
+  workflowId       String     @map("workflow_id")
+  workflowVersionId String    @map("workflow_version_id")
+  triggerId        String?    @map("trigger_id")
+  status           RunStatus  @default(QUEUED)
+  idempotencyKey   String?    @map("idempotency_key")
+  input            Json?      @map("input")
+  startedAt        DateTime?  @map("started_at")
+  finishedAt       DateTime?  @map("finished_at")
+  canceledAt       DateTime?  @map("canceled_at")
+  errorCode        String?    @map("error_code")
+  errorMessage     String?    @map("error_message")
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
+
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  workflow        Workflow       @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflowVersion WorkflowVersion @relation(fields: [workflowVersionId], references: [id], onDelete: Cascade)
+  trigger         Trigger?       @relation(fields: [triggerId], references: [id], onDelete: SetNull)
+  steps           StepRun[]
+
+  @@index([tenantId, workflowId])
+  @@index([tenantId, status])
+  @@index([tenantId, idempotencyKey])
+  @@map("workflow_runs")
+}
+
+model StepRun {
+  id             String        @id @default(uuid())
+  workflowRunId  String        @map("workflow_run_id")
+  stepKey        String        @map("step_key")
+  actionId       String?       @map("action_id")
+  status         StepRunStatus @default(QUEUED)
+  attempt        Int           @default(1)
+  startedAt      DateTime?     @map("started_at")
+  finishedAt     DateTime?     @map("finished_at")
+  errorCode      String?       @map("error_code")
+  errorMessage   String?       @map("error_message")
+  input          Json?         @map("input")
+  output         Json?         @map("output")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  workflowRun WorkflowRun @relation(fields: [workflowRunId], references: [id], onDelete: Cascade)
+  action      Action?     @relation(fields: [actionId], references: [id], onDelete: SetNull)
+
+  @@index([workflowRunId])
+  @@index([workflowRunId, stepKey])
+  @@map("step_runs")
+}
+
+// ExecutionLog is stored in MongoDB (not PostgreSQL) for fast access and high-volume writes
+// See MongoDB schema definition in docs/ARCHITECTURE.md
