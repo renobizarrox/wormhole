@@ -1,0 +1,36 @@
+{
+  "name": "wormhole-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.{js,ts,vue,json,css,scss}\""
+  },
+  "dependencies": {
+    "@nuxtjs/apollo": "^6.0.0",
+    "@pinia/nuxt": "^0.5.1",
+    "@vue/apollo-composable": "^4.0.0",
+    "nuxt": "^3.13.0",
+    "pinia": "^2.1.7",
+    "vuetify": "^3.6.0",
+    "vue": "^3.4.21",
+    "graphql": "^16.8.1",
+    "graphql-tag": "^2.12.6"
+  },
+  "devDependencies": {
+    "@nuxt/devtools": "latest",
+    "@nuxtjs/eslint-module": "^4.0.0",
+    "@nuxtjs/vuetify": "^3.0.0",
+    "@types/node": "^20.14.10",
+    "eslint": "^8.57.0",
+    "eslint-config-prettier": "^9.1.0",
+    "prettier": "^3.3.3",
+    "typescript": "^5.5.4"
+  }
+}
