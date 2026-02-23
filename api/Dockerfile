@@ -1,6 +1,8 @@
 # Build stage - expects build context = repository root (Coolify)
 FROM node:20-alpine AS builder
 
+ENV NODE_ENV=development
+
 WORKDIR /app
 
 # Copy package files and prisma from api/
