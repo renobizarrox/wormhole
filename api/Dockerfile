@@ -14,10 +14,11 @@ RUN npm ci
 RUN npx prisma generate
 
 # Copy source code
-COPY api/ .
+COPY api/tsconfig.json ./
+COPY api/src ./src/
 
 # Build TypeScript
-RUN npx tsc
+RUN ./node_modules/.bin/tsc
 
 # Production stage
 FROM node:20-alpine
