@@ -1,6 +1,7 @@
 # Build stage - expects build context = repository root (Coolify)
 FROM node:20-alpine AS builder
 
+# Force devDependencies so TypeScript is installed (Coolify may set NODE_ENV=production at build)
 ENV NODE_ENV=development
 
 WORKDIR /app
@@ -9,23 +10,27 @@ WORKDIR /app
 COPY api/package*.json ./
 COPY api/prisma ./prisma
 
-# Install dependencies
+# Install all dependencies including dev (typescript, etc.)
 RUN npm ci
 
 # Generate Prisma client
 RUN npx prisma generate
 
-# Copy source code
+# Copy only source and config (do not COPY api/ . to avoid overwriting node_modules)
 COPY api/tsconfig.json ./
 COPY api/src ./src/
 
-# Build TypeScript
+# Build TypeScript using local node_modules (avoids npx installing wrong "tsc" package)
 RUN ./node_modules/.bin/tsc
 
-# Production stage
-FROM node:20-alpine
+# Production stage (Debian base: Prisma engine needs glibc/OpenSSL; Alpine often fails)
+FROM node:20-slim
 
 WORKDIR /app
+
+# curl for Coolify healthcheck; ca-certificates for HTTPS
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
 
 # Copy package files and install production dependencies only
 COPY api/package*.json ./
@@ -43,9 +48,9 @@ COPY --from=builder /app/dist ./dist
 # Expose port
 EXPOSE 3000
 
-# Health check
+# Health check (curl used by Coolify; node fallback in Docker)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
-  CMD node -e "require('http').get('http://localhost:3000/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+  CMD curl -f -s http://localhost:3000/health || exit 1
 
 # Run migrations and start server
 CMD ["sh", "-c", "npx prisma migrate deploy && node dist/main.js"]
