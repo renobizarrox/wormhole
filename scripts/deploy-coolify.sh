@@ -10,6 +10,8 @@
 #   GIT_REPOSITORY=https://github.com/your-org/wormhole   (public repo URL)
 # Optional: SERVER_UUID=, PROJECT_UUID=, ENVIRONMENT_NAME=production
 #   (if not set, script uses first server and first project)
+# Optional: DESTINATION_UUID= (if PostgreSQL/Redis creation fails, set from Coolify Destinations)
+# Optional: POSTGRES_VOLUME_NAME=, HASURA_VOLUME_NAME= (remind to attach volumes in Coolify UI)
 #
 set -euo pipefail
 
@@ -40,6 +42,7 @@ GIT_BRANCH="${GIT_BRANCH:-main}"
 SERVER_UUID="${SERVER_UUID:-}"
 PROJECT_UUID="${PROJECT_UUID:-}"
 ENVIRONMENT_NAME="${ENVIRONMENT_NAME:-production}"
+DESTINATION_UUID="${DESTINATION_UUID:-}"
 
 if [[ -z "$COOLIFY_TOKEN" ]]; then
   echo "ERROR: COOLIFY_TOKEN is required. Set it in .env.coolify or environment."
@@ -96,54 +99,62 @@ fi
 echo "Using server: $SERVER_UUID, project: $PROJECT_UUID"
 
 # 1) Create PostgreSQL
+# Coolify DB API expects only schema fields; ports_exposes/ports_mappings are for apps.
+# If creation fails with 400/422, set DESTINATION_UUID in .env.coolify (from Coolify Destinations).
 echo "Creating PostgreSQL database..."
-PG_RESP=$(curl -s -X POST "${COOLIFY_API}/databases/postgresql" \
+PG_JSON=$(jq -n \
+  --arg su "$SERVER_UUID" \
+  --arg pu "$PROJECT_UUID" \
+  --arg en "$ENVIRONMENT_NAME" \
+  --arg puser "$POSTGRES_USER" \
+  --arg ppass "$POSTGRES_PASSWORD" \
+  --arg pdb "$POSTGRES_DB" \
+  --arg dest "${DESTINATION_UUID:-}" \
+  '{server_uuid:$su, project_uuid:$pu, environment_name:$en, postgres_user:$puser, postgres_password:$ppass, postgres_db:$pdb, name:"wormhole-postgres", is_public:true, public_port:5432, instant_deploy:true} + (if $dest != "" then {destination_uuid:$dest} else {} end)')
+PG_RESP=$(curl -s -w "\n%{http_code}" -X POST "${COOLIFY_API}/databases/postgresql" \
   -H "$AUTH_HEADER" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
-  -d "{
-    \"server_uuid\": \"$SERVER_UUID\",
-    \"project_uuid\": \"$PROJECT_UUID\",
-    \"environment_name\": \"$ENVIRONMENT_NAME\",
-    \"postgres_user\": \"$POSTGRES_USER\",
-    \"postgres_password\": \"$POSTGRES_PASSWORD\",
-    \"postgres_db\": \"$POSTGRES_DB\",
-    \"name\": \"wormhole-postgres\",
-    \"is_public\": true,
-    \"ports_exposes\": \"5432\",
-    \"ports_mappings\": \"5432:5432\",
-    \"instant_deploy\": true
-  }") || true
+  -d "$PG_JSON")
+PG_BODY=$(echo "$PG_RESP" | head -n -1)
+PG_CODE=$(echo "$PG_RESP" | tail -n 1)
 
-PG_UUID=$(echo "$PG_RESP" | jq -r '.uuid // .data.uuid // empty')
+PG_UUID=$(echo "$PG_BODY" | jq -r '.uuid // .data.uuid // empty')
 if [[ -z "$PG_UUID" ]]; then
-  echo "WARNING: PostgreSQL creation response: $PG_RESP"
-  echo "You may need to create PostgreSQL manually in Coolify and set DATABASE_URL in API env."
+  echo "WARNING: PostgreSQL creation failed (HTTP $PG_CODE). Response: $PG_BODY"
+  echo "If your Coolify requires a destination, create one in the UI and set DESTINATION_UUID in .env.coolify, then re-run."
+  echo "You can also create PostgreSQL manually in Coolify and set DATABASE_URL in the API app env."
   DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@wormhole-postgres:5432/${POSTGRES_DB}"
 else
   echo "PostgreSQL created: $PG_UUID"
-  # Coolify internal hostname is often the resource UUID or container name
   DATABASE_URL="postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${PG_UUID}:5432/${POSTGRES_DB}"
+  if [[ -n "${POSTGRES_VOLUME_NAME:-}" ]]; then
+    echo "  -> To use existing volume \"$POSTGRES_VOLUME_NAME\": Coolify → wormhole-postgres → Configuration → Persistent Storage → add Volume: Name=$POSTGRES_VOLUME_NAME, Destination=/var/lib/postgresql/data → Save and redeploy."
+  fi
 fi
 
 # 2) Create Redis
+# If creation fails, set DESTINATION_UUID in .env.coolify (same as for PostgreSQL).
 echo "Creating Redis..."
-REDIS_RESP=$(curl -s -X POST "${COOLIFY_API}/databases/redis" \
+REDIS_JSON=$(jq -n \
+  --arg su "$SERVER_UUID" \
+  --arg pu "$PROJECT_UUID" \
+  --arg en "$ENVIRONMENT_NAME" \
+  --arg rpass "$REDIS_PASSWORD" \
+  --arg dest "${DESTINATION_UUID:-}" \
+  '{server_uuid:$su, project_uuid:$pu, environment_name:$en, redis_password:$rpass, name:"wormhole-redis", instant_deploy:true} + (if $dest != "" then {destination_uuid:$dest} else {} end)')
+REDIS_RESP=$(curl -s -w "\n%{http_code}" -X POST "${COOLIFY_API}/databases/redis" \
   -H "$AUTH_HEADER" \
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
-  -d "{
-    \"server_uuid\": \"$SERVER_UUID\",
-    \"project_uuid\": \"$PROJECT_UUID\",
-    \"environment_name\": \"$ENVIRONMENT_NAME\",
-    \"redis_password\": \"$REDIS_PASSWORD\",
-    \"name\": \"wormhole-redis\",
-    \"instant_deploy\": true
-  }") || true
+  -d "$REDIS_JSON")
+REDIS_BODY=$(echo "$REDIS_RESP" | head -n -1)
+REDIS_CODE=$(echo "$REDIS_RESP" | tail -n 1)
 
-REDIS_UUID=$(echo "$REDIS_RESP" | jq -r '.uuid // .data.uuid // empty')
+REDIS_UUID=$(echo "$REDIS_BODY" | jq -r '.uuid // .data.uuid // empty')
 if [[ -z "$REDIS_UUID" ]]; then
-  echo "WARNING: Redis creation response: $REDIS_RESP"
+  echo "WARNING: Redis creation failed (HTTP $REDIS_CODE). Response: $REDIS_BODY"
+  echo "If required, set DESTINATION_UUID in .env.coolify and re-run."
   REDIS_URL="redis://:${REDIS_PASSWORD}@wormhole-redis:6379"
 else
   echo "Redis created: $REDIS_UUID"
@@ -183,6 +194,9 @@ if [[ -z "$HASURA_UUID" ]]; then
   exit 1
 fi
 echo "Hasura application created: $HASURA_UUID"
+if [[ -n "${HASURA_VOLUME_NAME:-}" ]]; then
+  echo "  -> To use existing volume \"$HASURA_VOLUME_NAME\": Coolify → wormhole-hasura → Configuration → Persistent Storage → add Volume: Name=$HASURA_VOLUME_NAME, Destination=/hasura-metadata → Save and redeploy."
+fi
 
 echo "Setting Hasura environment variables..."
 HASURA_DB_URL="$DATABASE_URL"

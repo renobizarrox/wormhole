@@ -34,6 +34,32 @@ The script will:
 
 After the run, configure Coolify proxy so `/api` routes to **wormhole-api** and `/` to **wormhole-web**, then open your Coolify URL and register the first tenant.
 
+### Using an existing Postgres volume (e.g. `postgres_data`)
+
+The Coolify API does not let the script pass a Docker volume name when creating PostgreSQL. To use a volume you already created on the Docker server (e.g. `postgres_data`):
+
+1. Run the deploy script so that **wormhole-postgres** is created in Coolify.
+2. In Coolify, open **wormhole-postgres** → **Configuration** → **Persistent Storage**.
+3. Add a **Volume**:
+   - **Name:** `postgres_data` (or the exact Docker volume name you created).
+   - **Destination path:** `/var/lib/postgresql/data`.
+4. Save and **Redeploy** the database so the container starts with that volume mounted.
+
+Optional: set `POSTGRES_VOLUME_NAME=postgres_data` in `.env.coolify` so the script reminds you of these steps after creating PostgreSQL.
+
+### Using an existing Hasura volume (e.g. `hasura_data`)
+
+To use a volume you created for Hasura (e.g. `hasura_data`):
+
+1. Run the deploy script so that **wormhole-hasura** is created in Coolify.
+2. In Coolify, open **wormhole-hasura** → **Configuration** → **Persistent Storage**.
+3. Add a **Volume**:
+   - **Name:** `hasura_data` (or your Docker volume name).
+   - **Destination path:** `/hasura-metadata` (for metadata/migrations; use `/app/data` if you prefer a generic app data path).
+4. Save and **Redeploy** the application.
+
+Optional: set `HASURA_VOLUME_NAME=hasura_data` in `.env.coolify` so the script reminds you after creating Hasura.
+
 ---
 
 ## Manual deployment
