@@ -8,8 +8,8 @@ WORKDIR /app
 # Copy package files from web/
 COPY web/package*.json ./
 
-# Install dependencies
-RUN npm ci
+# Install dependencies (npm install tolerates lock file drift; npm ci often fails with peer/optional deps)
+RUN npm install
 
 # Copy web app source (root .dockerignore excludes web/node_modules)
 COPY web/ .
@@ -22,9 +22,9 @@ FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files and install production dependencies
+# Copy package files and install production dependencies only
 COPY web/package*.json ./
-RUN npm ci --only=production
+RUN npm install --omit=dev
 
 # Copy built application
 COPY --from=builder /app/.output ./.output
