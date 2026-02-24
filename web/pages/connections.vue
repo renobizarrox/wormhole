@@ -45,7 +45,7 @@
           <v-text-field v-model="form.name" label="Name" :rules="[v => !!v || 'Required']" />
           <v-select v-model="form.authType" label="Auth type" :items="['API_KEY', 'OAUTH2', 'BASIC', 'CUSTOM_HEADER']" :disabled="!!editingId" />
           <p class="text-caption text-medium-emphasis mt-2">Credentials (stored encrypted). Leave blank when editing to keep existing.</p>
-          <v-textarea v-model="form.credentialsJson" label="Credentials (JSON, e.g. {\"apiKey\": \"...\"})" rows="3" />
+          <v-textarea v-model="form.credentialsJson" label='Credentials (JSON, e.g. {"apiKey": "..."})' rows="3" />
           <v-alert v-if="error" type="error" density="compact" class="mt-2">{{ error }}</v-alert>
         </v-card-text>
         <v-card-actions>
