@@ -55,7 +55,9 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       graphqlEndpoint: process.env.GRAPHQL_ENDPOINT || 'http://localhost:8080/v1/graphql',
-      apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:3000',
+      // In dev: API at http://localhost:3000/api
+      // In prod: set API_BASE_URL to a same-origin path like "/api"
+      apiBaseUrl: process.env.API_BASE_URL || 'http://localhost:3000/api',
     },
   },
   css: ['vuetify/styles'],

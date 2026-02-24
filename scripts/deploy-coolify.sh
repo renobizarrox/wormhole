@@ -273,8 +273,10 @@ if [[ -z "$WEB_UUID" ]]; then
 fi
 echo "Web application created: $WEB_UUID"
 
-# API_BASE_URL: frontend must call API; use Coolify base + /api (configure proxy so /api -> wormhole-api)
-API_PUBLIC_URL="${COOLIFY_URL}/api"
+# API_BASE_URL: frontend must call API on the same origin. We use a relative
+# path so that the browser hits the same host that served the web app, and
+# Coolify proxies /api -> wormhole-api.
+API_PUBLIC_URL="/api"
 # GRAPHQL_ENDPOINT: Hasura will be exposed on /graphql via proxy to wormhole-hasura
 GRAPHQL_ENDPOINT="${COOLIFY_URL}/graphql"
 echo "Setting Web environment variables (API_BASE_URL=$API_PUBLIC_URL, GRAPHQL_ENDPOINT=$GRAPHQL_ENDPOINT)..."
