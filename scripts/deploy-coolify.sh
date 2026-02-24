@@ -109,6 +109,9 @@ PG_RESP=$(curl -s -X POST "${COOLIFY_API}/databases/postgresql" \
     \"postgres_password\": \"$POSTGRES_PASSWORD\",
     \"postgres_db\": \"$POSTGRES_DB\",
     \"name\": \"wormhole-postgres\",
+    \"is_public\": true,
+    \"ports_exposes\": \"5432\",
+    \"ports_mappings\": \"5432:5432\",
     \"instant_deploy\": true
   }") || true
 
@@ -150,6 +153,7 @@ fi
 # 3) Create Hasura GraphQL application (Dockerfile -> official Hasura image)
 # No static IPs: Coolify/Docker assign IPs from the project network. Services
 # discover each other by container name (e.g. wormhole-hasura, wormhole-api).
+# ports_mappings publishes host ports so containers are reachable (e.g. from proxy or direct).
 echo "Creating Hasura (GraphQL) application..."
 HASURA_RESP=$(curl -s -X POST "${COOLIFY_API}/applications/public" \
   -H "$AUTH_HEADER" \
@@ -166,6 +170,7 @@ HASURA_RESP=$(curl -s -X POST "${COOLIFY_API}/applications/public" \
     \"base_directory\": \"/\",
     \"name\": \"wormhole-hasura\",
     \"ports_exposes\": \"8080\",
+    \"ports_mappings\": \"8081:8080\",
     \"health_check_enabled\": true,
     \"health_check_path\": \"/healthz\",
     \"health_check_port\": \"8080\",
@@ -211,6 +216,7 @@ API_RESP=$(curl -s -X POST "${COOLIFY_API}/applications/public" \
     \"base_directory\": \"/\",
     \"name\": \"wormhole-api\",
     \"ports_exposes\": \"3000\",
+    \"ports_mappings\": \"3000:3000\",
     \"health_check_enabled\": true,
     \"health_check_path\": \"/health\",
     \"health_check_port\": \"3000\",
@@ -243,7 +249,7 @@ curl -s -X PATCH "${COOLIFY_API}/applications/${API_UUID}/envs/bulk" \
     ]
   }" > /dev/null || true
 
-# 4) Create Web application
+# 5) Create Web application
 echo "Creating Web application..."
 WEB_RESP=$(curl -s -X POST "${COOLIFY_API}/applications/public" \
   -H "$AUTH_HEADER" \
@@ -260,6 +266,7 @@ WEB_RESP=$(curl -s -X POST "${COOLIFY_API}/applications/public" \
     \"base_directory\": \"/\",
     \"name\": \"wormhole-web\",
     \"ports_exposes\": \"3000\",
+    \"ports_mappings\": \"3001:3000\",
     \"health_check_enabled\": true,
     \"health_check_path\": \"/\",
     \"health_check_port\": \"3000\",
@@ -292,7 +299,7 @@ curl -s -X PATCH "${COOLIFY_API}/applications/${WEB_UUID}/envs/bulk" \
     ]
   }" > /dev/null || true
 
-# 5) Trigger deploys
+# 6) Trigger deploys
 echo "Triggering deployments..."
 curl -s -X GET "${COOLIFY_API}/deploy?uuid=${API_UUID}&force=false" -H "$AUTH_HEADER" > /dev/null || true
 curl -s -X GET "${COOLIFY_API}/deploy?uuid=${WEB_UUID}&force=false" -H "$AUTH_HEADER" > /dev/null || true
