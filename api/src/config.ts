@@ -11,6 +11,8 @@ const envSchema = z.object({
   REDIS_URL: z.string().optional(),
   /** 32-byte hex key for AES-256-GCM (connection/secret encryption). In production use KMS/Vault. */
   ENCRYPTION_KEY: z.string().length(64).regex(/^[0-9a-fA-F]+$/).optional(),
+  /** Comma-separated origins for CORS, or "true" to reflect request origin. Default reflects origin. */
+  CORS_ORIGIN: z.string().optional(),
 });
 
 export type Config = z.infer<typeof envSchema>;

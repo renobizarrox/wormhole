@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import { config } from './config.js';
 import authPlugin from './plugins/auth.js';
 import authRoutes from './routes/auth.js';
@@ -15,6 +16,13 @@ import { startWorker } from './lib/queue.js';
 
 export async function buildApp() {
   const app = Fastify({ logger: config.NODE_ENV !== 'test' });
+
+  await app.register(cors, {
+    origin: config.CORS_ORIGIN === 'true' || !config.CORS_ORIGIN
+      ? true
+      : config.CORS_ORIGIN.split(',').map((s) => s.trim()),
+    credentials: true,
+  });
 
   await app.register(authPlugin);
 

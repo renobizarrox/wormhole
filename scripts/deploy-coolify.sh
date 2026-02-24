@@ -244,24 +244,32 @@ if [[ -z "$API_UUID" ]]; then
 fi
 echo "API application created: $API_UUID"
 
-# Set API environment variables
+# Set API environment variables (CORS_ORIGIN unset = reflect request origin for cross-origin web app)
 echo "Setting API environment variables..."
+API_ENV_JSON=$(jq -n \
+  --arg db "$DATABASE_URL" \
+  --arg jwt "$JWT_SECRET" \
+  --arg enc "$ENCRYPTION_KEY" \
+  --arg redis "$REDIS_URL" \
+  --arg cors "${CORS_ORIGIN:-}" \
+  '
+    .data = [
+      {"key": "NODE_ENV", "value": "production"},
+      {"key": "DATABASE_URL", "value": $db},
+      {"key": "JWT_SECRET", "value": $jwt},
+      {"key": "JWT_ISSUER", "value": "wormhole-api"},
+      {"key": "JWT_EXPIRES_IN", "value": "7d"},
+      {"key": "HOST", "value": "0.0.0.0"},
+      {"key": "PORT", "value": "3000"},
+      {"key": "REDIS_URL", "value": $redis},
+      {"key": "ENCRYPTION_KEY", "value": $enc}
+    ]
+    | if $cors != "" then .data += [{"key": "CORS_ORIGIN", "value": $cors}] else . end
+  ')
 curl -s -X PATCH "${COOLIFY_API}/applications/${API_UUID}/envs/bulk" \
   -H "$AUTH_HEADER" \
   -H "Content-Type: application/json" \
-  -d "{
-    \"data\": [
-      {\"key\": \"NODE_ENV\", \"value\": \"production\"},
-      {\"key\": \"DATABASE_URL\", \"value\": \"$DATABASE_URL\"},
-      {\"key\": \"JWT_SECRET\", \"value\": \"$JWT_SECRET\"},
-      {\"key\": \"JWT_ISSUER\", \"value\": \"wormhole-api\"},
-      {\"key\": \"JWT_EXPIRES_IN\", \"value\": \"7d\"},
-      {\"key\": \"HOST\", \"value\": \"0.0.0.0\"},
-      {\"key\": \"PORT\", \"value\": \"3000\"},
-      {\"key\": \"REDIS_URL\", \"value\": \"$REDIS_URL\"},
-      {\"key\": \"ENCRYPTION_KEY\", \"value\": \"$ENCRYPTION_KEY\"}
-    ]
-  }" > /dev/null || true
+  -d "$API_ENV_JSON" > /dev/null || true
 
 # 5) Create Web application
 echo "Creating Web application..."
@@ -300,7 +308,8 @@ echo "Web application created: $WEB_UUID"
 API_PUBLIC_URL="${API_PUBLIC_URL:-/api}"
 # GRAPHQL_ENDPOINT: Hasura will be exposed on /graphql via proxy to wormhole-hasura
 GRAPHQL_ENDPOINT="${COOLIFY_URL}/graphql"
-echo "Setting Web environment variables (API_BASE_URL=$API_PUBLIC_URL, GRAPHQL_ENDPOINT=$GRAPHQL_ENDPOINT)..."
+# Nuxt 3 overrides runtimeConfig.public only via NUXT_PUBLIC_* env vars at runtime.
+echo "Setting Web environment variables (NUXT_PUBLIC_API_BASE_URL=$API_PUBLIC_URL, GRAPHQL_ENDPOINT=$GRAPHQL_ENDPOINT)..."
 curl -s -X PATCH "${COOLIFY_API}/applications/${WEB_UUID}/envs/bulk" \
   -H "$AUTH_HEADER" \
   -H "Content-Type: application/json" \
@@ -308,6 +317,7 @@ curl -s -X PATCH "${COOLIFY_API}/applications/${WEB_UUID}/envs/bulk" \
     \"data\": [
       {\"key\": \"NODE_ENV\", \"value\": \"production\"},
       {\"key\": \"API_BASE_URL\", \"value\": \"$API_PUBLIC_URL\"},
+      {\"key\": \"NUXT_PUBLIC_API_BASE_URL\", \"value\": \"$API_PUBLIC_URL\"},
       {\"key\": \"GRAPHQL_ENDPOINT\", \"value\": \"$GRAPHQL_ENDPOINT\"},
       {\"key\": \"HASURA_ADMIN_SECRET\", \"value\": \"$HASURA_ADMIN_SECRET\"}
     ]
