@@ -116,7 +116,7 @@ PG_RESP=$(curl -s -w "\n%{http_code}" -X POST "${COOLIFY_API}/databases/postgres
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d "$PG_JSON")
-PG_BODY=$(echo "$PG_RESP" | head -n -1)
+PG_BODY=$(echo "$PG_RESP" | sed '$d')
 PG_CODE=$(echo "$PG_RESP" | tail -n 1)
 
 PG_UUID=$(echo "$PG_BODY" | jq -r '.uuid // .data.uuid // empty')
@@ -148,7 +148,7 @@ REDIS_RESP=$(curl -s -w "\n%{http_code}" -X POST "${COOLIFY_API}/databases/redis
   -H "Content-Type: application/json" \
   -H "Accept: application/json" \
   -d "$REDIS_JSON")
-REDIS_BODY=$(echo "$REDIS_RESP" | head -n -1)
+REDIS_BODY=$(echo "$REDIS_RESP" | sed '$d')
 REDIS_CODE=$(echo "$REDIS_RESP" | tail -n 1)
 
 REDIS_UUID=$(echo "$REDIS_BODY" | jq -r '.uuid // .data.uuid // empty')
