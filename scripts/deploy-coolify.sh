@@ -58,6 +58,7 @@ AUTH_HEADER="Authorization: Bearer $COOLIFY_TOKEN"
 generate_secret() { openssl rand -hex 32; }
 JWT_SECRET=$(generate_secret)
 ENCRYPTION_KEY=$(openssl rand -hex 32)
+HASURA_ADMIN_SECRET=$(generate_secret)
 POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
 REDIS_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 24)
 POSTGRES_USER="wormhole"
@@ -70,9 +71,20 @@ if [[ -z "$SERVER_UUID" ]] || [[ -z "$PROJECT_UUID" ]]; then
   echo "Fetching Coolify servers and projects..."
   SERVERS_JSON=$(curl -s -H "$AUTH_HEADER" "${COOLIFY_API}/servers") || true
   PROJECTS_JSON=$(curl -s -H "$AUTH_HEADER" "${COOLIFY_API}/projects") || true
+
+  # Prefer a non-localhost server when multiple servers exist, so deployments
+  # default to a dedicated Docker server instead of the local Coolify host.
   if [[ -z "$SERVER_UUID" ]] && [[ -n "$SERVERS_JSON" ]]; then
-    SERVER_UUID=$(echo "$SERVERS_JSON" | jq -r 'if type == "array" then .[0].uuid else .uuid end // empty')
+    SERVER_UUID=$(echo "$SERVERS_JSON" | jq -r '
+      if type == "array" then
+        # Try to pick the first server whose name is not \"localhost\"
+        (map(select(.name != \"localhost\"))[0].uuid // .[0].uuid)
+      else
+        .uuid
+      end // empty
+    ')
   fi
+
   if [[ -z "$PROJECT_UUID" ]] && [[ -n "$PROJECTS_JSON" ]]; then
     PROJECT_UUID=$(echo "$PROJECTS_JSON" | jq -r 'if type == "array" then .[0].uuid else .uuid end // empty')
   fi
@@ -142,7 +154,54 @@ else
   REDIS_URL="redis://:${REDIS_PASSWORD}@${REDIS_UUID}:6379"
 fi
 
-# 3) Create API application (Dockerfile)
+# 3) Create Hasura GraphQL application (Dockerfile -> official Hasura image)
+# No static IPs: Coolify/Docker assign IPs from the project network. Services
+# discover each other by container name (e.g. wormhole-hasura, wormhole-api).
+echo "Creating Hasura (GraphQL) application..."
+HASURA_RESP=$(curl -s -X POST "${COOLIFY_API}/applications/public" \
+  -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -H "Accept: application/json" \
+  -d "{
+    \"server_uuid\": \"$SERVER_UUID\",
+    \"project_uuid\": \"$PROJECT_UUID\",
+    \"environment_name\": \"$ENVIRONMENT_NAME\",
+    \"git_repository\": \"$GIT_REPOSITORY\",
+    \"git_branch\": \"$GIT_BRANCH\",
+    \"build_pack\": \"dockerfile\",
+    \"dockerfile_location\": \"hasura/Dockerfile\",
+    \"base_directory\": \"/\",
+    \"name\": \"wormhole-hasura\",
+    \"ports_exposes\": \"8080\",
+    \"health_check_enabled\": true,
+    \"health_check_path\": \"/healthz\",
+    \"health_check_port\": \"8080\",
+    \"instant_deploy\": false
+  }") || true
+
+HASURA_UUID=$(echo "$HASURA_RESP" | jq -r '.uuid // .data.uuid // empty')
+if [[ -z "$HASURA_UUID" ]]; then
+  echo "ERROR: Failed to create Hasura application. Response: $HASURA_RESP"
+  exit 1
+fi
+echo "Hasura application created: $HASURA_UUID"
+
+echo "Setting Hasura environment variables..."
+HASURA_DB_URL="$DATABASE_URL"
+curl -s -X PATCH "${COOLIFY_API}/applications/${HASURA_UUID}/envs/bulk" \
+  -H "$AUTH_HEADER" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"data\": [
+      {\"key\": \"HASURA_GRAPHQL_DATABASE_URL\", \"value\": \"$HASURA_DB_URL\"},
+      {\"key\": \"HASURA_GRAPHQL_ADMIN_SECRET\", \"value\": \"$HASURA_ADMIN_SECRET\"},
+      {\"key\": \"HASURA_GRAPHQL_ENABLE_CONSOLE\", \"value\": \"true\"},
+      {\"key\": \"HASURA_GRAPHQL_DEV_MODE\", \"value\": \"true\"},
+      {\"key\": \"HASURA_GRAPHQL_ENABLED_LOG_TYPES\", \"value\": \"startup,http-log,webhook-log,websocket-log,query-log\"}
+    ]
+  }" > /dev/null || true
+
+# 4) Create API application (Dockerfile)
 echo "Creating API application..."
 API_RESP=$(curl -s -X POST "${COOLIFY_API}/applications/public" \
   -H "$AUTH_HEADER" \
@@ -223,14 +282,18 @@ echo "Web application created: $WEB_UUID"
 
 # API_BASE_URL: frontend must call API; use Coolify base + /api (configure proxy so /api -> wormhole-api)
 API_PUBLIC_URL="${COOLIFY_URL}/api"
-echo "Setting Web environment variables (API_BASE_URL=$API_PUBLIC_URL)..."
+# GRAPHQL_ENDPOINT: Hasura will be exposed on /graphql via proxy to wormhole-hasura
+GRAPHQL_ENDPOINT="${COOLIFY_URL}/graphql"
+echo "Setting Web environment variables (API_BASE_URL=$API_PUBLIC_URL, GRAPHQL_ENDPOINT=$GRAPHQL_ENDPOINT)..."
 curl -s -X PATCH "${COOLIFY_API}/applications/${WEB_UUID}/envs/bulk" \
   -H "$AUTH_HEADER" \
   -H "Content-Type: application/json" \
   -d "{
     \"data\": [
       {\"key\": \"NODE_ENV\", \"value\": \"production\"},
-      {\"key\": \"API_BASE_URL\", \"value\": \"$API_PUBLIC_URL\"}
+      {\"key\": \"API_BASE_URL\", \"value\": \"$API_PUBLIC_URL\"},
+      {\"key\": \"GRAPHQL_ENDPOINT\", \"value\": \"$GRAPHQL_ENDPOINT\"},
+      {\"key\": \"HASURA_ADMIN_SECRET\", \"value\": \"$HASURA_ADMIN_SECRET\"}
     ]
   }" > /dev/null || true
 
@@ -238,6 +301,7 @@ curl -s -X PATCH "${COOLIFY_API}/applications/${WEB_UUID}/envs/bulk" \
 echo "Triggering deployments..."
 curl -s -X GET "${COOLIFY_API}/deploy?uuid=${API_UUID}&force=false" -H "$AUTH_HEADER" > /dev/null || true
 curl -s -X GET "${COOLIFY_API}/deploy?uuid=${WEB_UUID}&force=false" -H "$AUTH_HEADER" > /dev/null || true
+curl -s -X GET "${COOLIFY_API}/deploy?uuid=${HASURA_UUID}&force=false" -H "$AUTH_HEADER" > /dev/null || true
 
 # Save generated secrets for reference (do not commit)
 cat > .env.coolify.generated << EOF
@@ -251,10 +315,12 @@ REDIS_PASSWORD=$REDIS_PASSWORD
 REDIS_URL=$REDIS_URL
 JWT_SECRET=$JWT_SECRET
 ENCRYPTION_KEY=$ENCRYPTION_KEY
+HASURA_ADMIN_SECRET=$HASURA_ADMIN_SECRET
 API_UUID=$API_UUID
 WEB_UUID=$WEB_UUID
 PG_UUID=$PG_UUID
 REDIS_UUID=$REDIS_UUID
+HASURA_UUID=$HASURA_UUID
 EOF
 chmod 600 .env.coolify.generated 2>/dev/null || true
 

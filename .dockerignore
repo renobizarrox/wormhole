@@ -1,0 +1,23 @@
+# Used when build context is repo root (e.g. Coolify)
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+node_modules
+api/node_modules
+web/node_modules
+api/dist
+web/.nuxt
+web/.output
+web/dist
+*.log
+.DS_Store
+.idea
+.vscode
+coverage
+*.test.ts
+**/__pycache__
+.venv
+runner/.venv
