@@ -75,14 +75,7 @@ if [[ -z "$SERVER_UUID" ]] || [[ -z "$PROJECT_UUID" ]]; then
   # Prefer a non-localhost server when multiple servers exist, so deployments
   # default to a dedicated Docker server instead of the local Coolify host.
   if [[ -z "$SERVER_UUID" ]] && [[ -n "$SERVERS_JSON" ]]; then
-    SERVER_UUID=$(echo "$SERVERS_JSON" | jq -r '
-      if type == "array" then
-        # Try to pick the first server whose name is not \"localhost\"
-        (map(select(.name != \"localhost\"))[0].uuid // .[0].uuid)
-      else
-        .uuid
-      end // empty
-    ')
+    SERVER_UUID=$(echo "$SERVERS_JSON" | jq -r 'if type == "array" then (map(select(.name != "localhost"))[0].uuid // .[0].uuid) else .uuid end // empty')
   fi
 
   if [[ -z "$PROJECT_UUID" ]] && [[ -n "$PROJECTS_JSON" ]]; then
