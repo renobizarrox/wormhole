@@ -41,8 +41,8 @@ export const useAuthStore = defineStore('auth', {
       this.user = response.user;
       this.tenant = response.tenant;
       this.role = response.role;
-      // Store token in cookie for Apollo client
-      const tokenCookie = useCookie('auth-token', { secure: true, sameSite: 'strict' });
+      // Store token in cookie for API/Apollo; allow HTTP for local/dev
+      const tokenCookie = useCookie('auth-token', { sameSite: 'strict' });
       tokenCookie.value = response.token;
     },
     async logout() {
