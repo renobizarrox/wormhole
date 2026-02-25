@@ -15,7 +15,7 @@ const registerBody = z.object({
 const loginBody = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-  tenantId: z.string().uuid(),
+  tenantId: z.string().uuid().optional(),
 });
 
 export default async function authRoutes(app: FastifyInstance) {
@@ -114,10 +114,23 @@ export default async function authRoutes(app: FastifyInstance) {
       });
     }
 
-    const membership = await prisma.membership.findFirst({
-      where: { userId: user.id, tenantId },
+    const allMemberships = await prisma.membership.findMany({
+      where: { userId: user.id },
       include: { tenant: true },
     });
+
+    if (allMemberships.length === 0) {
+      return reply.status(401).send({
+        code: 'UNAUTHORIZED',
+        message: 'User does not belong to any tenant',
+      });
+    }
+
+    let membership =
+      tenantId != null
+        ? allMemberships.find((m) => m.tenantId === tenantId)
+        : allMemberships.find((m) => m.role === 'Owner') ?? allMemberships[0];
+
     if (!membership) {
       return reply.status(401).send({
         code: 'UNAUTHORIZED',
@@ -156,6 +169,70 @@ export default async function authRoutes(app: FastifyInstance) {
       role: membership.role,
     });
   });
+
+  const switchTenantBody = z.object({
+    tenantId: z.string().uuid(),
+  });
+
+  app.post<{
+    Body: z.infer<typeof switchTenantBody>;
+  }>(
+    '/auth/switch-tenant',
+    { preHandler: [app.authenticate] },
+    async (request, reply) => {
+      const body = switchTenantBody.safeParse(request.body);
+      if (!body.success) {
+        return reply.status(400).send({
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid body',
+          details: body.error.flatten(),
+        });
+      }
+
+      const payload = request.user as AuthUser;
+      const user = await prisma.user.findUnique({ where: { id: payload.sub } });
+      if (!user) {
+        return reply.status(401).send({
+          code: 'UNAUTHORIZED',
+          message: 'User not found',
+        });
+      }
+
+      const membership = await prisma.membership.findFirst({
+        where: { userId: user.id, tenantId: body.data.tenantId },
+        include: { tenant: true },
+      });
+      if (!membership) {
+        return reply.status(401).send({
+          code: 'UNAUTHORIZED',
+          message: 'User is not a member of this tenant',
+        });
+      }
+
+      const token = app.jwt.sign({
+        sub: user.id,
+        email: user.email,
+        tenantId: membership.tenantId,
+        membershipId: membership.id,
+        role: membership.role,
+      });
+
+      return reply.send({
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        },
+        tenant: {
+          id: membership.tenant.id,
+          name: membership.tenant.name,
+          slug: membership.tenant.slug,
+        },
+        role: membership.role,
+      });
+    }
+  );
 
   app.get(
     '/auth/me',
