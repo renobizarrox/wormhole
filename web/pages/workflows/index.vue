@@ -111,20 +111,16 @@ function openCreate() {
   showDialog.value = true;
 }
 
-function editWorkflow(w: WorkflowItem) {
-  editingId.value = w.id;
-  form.value = { name: w.name, key: w.key, description: w.description ?? '' };
-  error.value = '';
-  showDialog.value = true;
-}
-
 async function save() {
   if (!form.value.name || !form.value.key) return;
   saving.value = true;
   error.value = '';
   try {
     if (editingId.value) {
-      await api.patch(`/workflows/${editingId.value}`, { name: form.value.name, description: form.value.description || undefined });
+      await api.patch(`/workflows/${editingId.value}`, {
+        name: form.value.name,
+        description: form.value.description || undefined,
+      });
     } else {
       await api.post('/workflows', {
         name: form.value.name,
@@ -164,3 +160,4 @@ async function doDelete() {
 
 onMounted(load);
 </script>
+
