@@ -73,6 +73,14 @@ enum TriggerType {
   CRON
 }
 
+enum ActionOperation {
+  NONE
+  READ
+  CREATE
+  UPDATE
+  DELETE
+}
+
 model Tenant {
   id          String   @id @default(uuid())
   name        String
@@ -203,23 +211,34 @@ model AppVersion {
 }
 
 model Action {
-  id               String        @id @default(uuid())
-  appVersionId     String        @map("app_version_id")
+  id               String         @id @default(uuid())
+  appVersionId     String         @map("app_version_id")
   key              String
   name             String
   description      String?
   method           HttpMethod
-  endpointTemplate String        @map("endpoint_template")
-  headersTemplate  Json?         @map("headers_template")
-  querySchema      Json?         @map("query_schema")
-  pathSchema       Json?         @map("path_schema")
-  bodySchema       Json?         @map("body_schema")
-  outputSchema     Json?         @map("output_schema")
-  retryStrategy    RetryStrategy @default(FIXED) @map("retry_strategy")
-  maxAttempts      Int           @default(3) @map("max_attempts")
-  initialDelayMs   Int           @default(1000) @map("initial_delay_ms")
-  maxDelayMs       Int?          @map("max_delay_ms")
-  timeoutMs        Int           @default(30000) @map("timeout_ms")
+  endpointTemplate String         @map("endpoint_template")
+  headersTemplate  Json?          @map("headers_template")
+  querySchema      Json?          @map("query_schema")
+  pathSchema       Json?          @map("path_schema")
+  bodySchema       Json?          @map("body_schema")
+  outputSchema     Json?          @map("output_schema")
+  retryStrategy    RetryStrategy  @default(FIXED) @map("retry_strategy")
+  maxAttempts      Int            @default(3) @map("max_attempts")
+  initialDelayMs   Int            @default(1000) @map("initial_delay_ms")
+  maxDelayMs       Int?           @map("max_delay_ms")
+  timeoutMs        Int            @default(30000) @map("timeout_ms")
+  // Schema / properties (for workflow builder and logging)
+  model            String?        // e.g. "Commerce / Product"
+  operation        ActionOperation? @default(NONE)
+  isGraphQL        Boolean        @default(false) @map("is_graphql")
+  hasPaginationLimit  Boolean     @default(false) @map("has_pagination_limit")
+  hasPaginationOffset Boolean     @default(false) @map("has_pagination_offset")
+  hasCustomArguments Boolean      @default(false) @map("has_custom_arguments")
+  hasFilters       Boolean        @default(false) @map("has_filters")
+  hasSorting       Boolean        @default(false) @map("has_sorting")
+  notes            String?        // markdown for workflow builders
+  notesAppearance  String?       @map("notes_appearance") // "info" | "warning" | "error"
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 

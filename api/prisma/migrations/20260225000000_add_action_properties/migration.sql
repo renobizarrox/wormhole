@@ -1,0 +1,14 @@
+-- CreateEnum
+CREATE TYPE "ActionOperation" AS ENUM ('NONE', 'READ', 'CREATE', 'UPDATE', 'DELETE');
+
+-- AlterTable
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "model" TEXT;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "operation" "ActionOperation";
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "is_graphql" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "has_pagination_limit" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "has_pagination_offset" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "has_custom_arguments" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "has_filters" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "has_sorting" BOOLEAN NOT NULL DEFAULT false;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "notes" TEXT;
+ALTER TABLE "actions" ADD COLUMN IF NOT EXISTS "notes_appearance" TEXT;

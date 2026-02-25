@@ -7,6 +7,7 @@ import type { JwtPayload } from '../types/auth.js';
 const json = (v: Record<string, unknown> | null | undefined): Prisma.InputJsonValue | undefined =>
   v === null || v === undefined ? undefined : (v as Prisma.InputJsonValue);
 
+const actionOperationEnum = z.enum(['NONE', 'READ', 'CREATE', 'UPDATE', 'DELETE']);
 const createActionBody = z.object({
   key: z.string().min(1).regex(/^[a-zA-Z0-9_-]+$/),
   name: z.string().min(1),
@@ -23,6 +24,17 @@ const createActionBody = z.object({
   initialDelayMs: z.number().int().min(0).optional(),
   maxDelayMs: z.number().int().min(0).nullable().optional(),
   timeoutMs: z.number().int().min(1000).optional(),
+  // Schema / properties
+  model: z.string().nullable().optional(),
+  operation: actionOperationEnum.nullable().optional(),
+  isGraphQL: z.boolean().optional(),
+  hasPaginationLimit: z.boolean().optional(),
+  hasPaginationOffset: z.boolean().optional(),
+  hasCustomArguments: z.boolean().optional(),
+  hasFilters: z.boolean().optional(),
+  hasSorting: z.boolean().optional(),
+  notes: z.string().nullable().optional(),
+  notesAppearance: z.string().nullable().optional(),
 });
 
 const updateActionBody = createActionBody.partial();
@@ -114,6 +126,16 @@ export default async function actionsRoutes(app: FastifyInstance) {
           initialDelayMs: body.data.initialDelayMs ?? 1000,
           maxDelayMs: body.data.maxDelayMs ?? undefined,
           timeoutMs: body.data.timeoutMs ?? 30000,
+          model: body.data.model ?? null,
+          operation: body.data.operation ?? null,
+          isGraphQL: body.data.isGraphQL ?? false,
+          hasPaginationLimit: body.data.hasPaginationLimit ?? false,
+          hasPaginationOffset: body.data.hasPaginationOffset ?? false,
+          hasCustomArguments: body.data.hasCustomArguments ?? false,
+          hasFilters: body.data.hasFilters ?? false,
+          hasSorting: body.data.hasSorting ?? false,
+          notes: body.data.notes ?? null,
+          notesAppearance: body.data.notesAppearance ?? null,
         },
       });
       return reply.status(201).send(action);
@@ -151,6 +173,16 @@ export default async function actionsRoutes(app: FastifyInstance) {
           ...(body.data.initialDelayMs != null && { initialDelayMs: body.data.initialDelayMs }),
           ...(body.data.maxDelayMs !== undefined && { maxDelayMs: body.data.maxDelayMs }),
           ...(body.data.timeoutMs != null && { timeoutMs: body.data.timeoutMs }),
+          ...(body.data.model !== undefined && { model: body.data.model ?? null }),
+          ...(body.data.operation !== undefined && { operation: body.data.operation ?? null }),
+          ...(body.data.isGraphQL !== undefined && { isGraphQL: body.data.isGraphQL }),
+          ...(body.data.hasPaginationLimit !== undefined && { hasPaginationLimit: body.data.hasPaginationLimit }),
+          ...(body.data.hasPaginationOffset !== undefined && { hasPaginationOffset: body.data.hasPaginationOffset }),
+          ...(body.data.hasCustomArguments !== undefined && { hasCustomArguments: body.data.hasCustomArguments }),
+          ...(body.data.hasFilters !== undefined && { hasFilters: body.data.hasFilters }),
+          ...(body.data.hasSorting !== undefined && { hasSorting: body.data.hasSorting }),
+          ...(body.data.notes !== undefined && { notes: body.data.notes ?? null }),
+          ...(body.data.notesAppearance !== undefined && { notesAppearance: body.data.notesAppearance ?? null }),
         },
       });
       return reply.send(updated);

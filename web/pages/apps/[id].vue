@@ -53,18 +53,53 @@
     </v-card>
 
     <!-- Create/Edit Action -->
-    <v-dialog v-model="actionDialog" max-width="800" persistent>
+    <v-dialog v-model="actionDialog" max-width="800" persistent scrollable>
       <v-card>
         <v-card-title>{{ editingAction ? 'Edit Action' : 'Add Action' }}</v-card-title>
         <v-card-text>
-          <v-text-field v-model="actionForm.key" label="Key" :disabled="!!editingAction" :rules="[v => !!v || 'Required']" />
-          <v-text-field v-model="actionForm.name" label="Name" :rules="[v => !!v || 'Required']" />
-          <v-text-field v-model="actionForm.endpointTemplate" label="Endpoint template" />
-          <v-select v-model="actionForm.method" label="Method" :items="['GET', 'POST', 'PUT', 'PATCH', 'DELETE']" />
-          <v-textarea v-model="actionForm.bodySchemaJson" label="Body schema (JSON)" rows="4" />
-          <v-textarea v-model="actionForm.querySchemaJson" label="Query schema (JSON)" rows="2" />
-          <v-textarea v-model="actionForm.pathSchemaJson" label="Path schema (JSON)" rows="2" />
-          <v-alert v-if="actionError" type="error" density="compact">{{ actionError }}</v-alert>
+          <v-tabs v-model="actionTab" class="mb-4">
+            <v-tab value="properties">Properties</v-tab>
+            <v-tab value="request">Request</v-tab>
+            <v-tab value="arguments">Arguments</v-tab>
+          </v-tabs>
+          <v-window v-model="actionTab">
+            <v-window-item value="properties">
+              <p class="text-caption text-medium-emphasis mb-2">Settings to help us understand what the action is doing. Useful for workflow builder and logging.</p>
+              <v-text-field v-model="actionForm.model" label="Model" hint="Resource type this action interacts with (e.g. Commerce / Product)" persistent-hint />
+              <v-radio-group v-model="actionForm.operation" label="Operation" inline>
+                <v-radio label="None" value="NONE" />
+                <v-radio label="Read" value="READ" />
+                <v-radio label="Create" value="CREATE" />
+                <v-radio label="Update" value="UPDATE" />
+                <v-radio label="Delete" value="DELETE" />
+              </v-radio-group>
+              <v-divider class="my-3" />
+              <p class="text-caption text-medium-emphasis mb-2">Features</p>
+              <div class="d-flex flex-wrap gap-4">
+                <v-checkbox v-model="actionForm.isGraphQL" label="Is GraphQL?" density="compact" hide-details />
+                <v-checkbox v-model="actionForm.hasPaginationLimit" label="Pagination limit" density="compact" hide-details />
+                <v-checkbox v-model="actionForm.hasPaginationOffset" label="Pagination offset" density="compact" hide-details />
+                <v-checkbox v-model="actionForm.hasCustomArguments" label="Custom arguments" density="compact" hide-details />
+                <v-checkbox v-model="actionForm.hasFilters" label="Filters" density="compact" hide-details />
+                <v-checkbox v-model="actionForm.hasSorting" label="Sorting" density="compact" hide-details />
+              </div>
+              <v-divider class="my-3" />
+              <v-textarea v-model="actionForm.notes" label="Notes" hint="Relevant quirks or action info for workflow builders. Markdown supported." persistent-hint rows="3" />
+              <v-select v-model="actionForm.notesAppearance" label="Notes appearance" :items="[{ title: 'Info', value: 'info' }, { title: 'Warning', value: 'warning' }, { title: 'Error', value: 'error' }]" clearable />
+            </v-window-item>
+            <v-window-item value="request">
+              <v-text-field v-model="actionForm.key" label="Key" :disabled="!!editingAction" :rules="[v => !!v || 'Required']" />
+              <v-text-field v-model="actionForm.name" label="Name" :rules="[v => !!v || 'Required']" />
+              <v-text-field v-model="actionForm.endpointTemplate" label="Endpoint template" />
+              <v-select v-model="actionForm.method" label="Method" :items="['GET', 'POST', 'PUT', 'PATCH', 'DELETE']" />
+            </v-window-item>
+            <v-window-item value="arguments">
+              <v-textarea v-model="actionForm.bodySchemaJson" label="Body schema (JSON)" rows="4" />
+              <v-textarea v-model="actionForm.querySchemaJson" label="Query schema (JSON)" rows="2" />
+              <v-textarea v-model="actionForm.pathSchemaJson" label="Path schema (JSON)" rows="2" />
+            </v-window-item>
+          </v-window>
+          <v-alert v-if="actionError" type="error" density="compact" class="mt-3">{{ actionError }}</v-alert>
         </v-card-text>
         <v-card-actions>
           <v-spacer />
@@ -135,6 +170,16 @@ interface Action {
   bodySchema: unknown;
   querySchema: unknown;
   pathSchema: unknown;
+  model?: string | null;
+  operation?: string | null;
+  isGraphQL?: boolean;
+  hasPaginationLimit?: boolean;
+  hasPaginationOffset?: boolean;
+  hasCustomArguments?: boolean;
+  hasFilters?: boolean;
+  hasSorting?: boolean;
+  notes?: string | null;
+  notesAppearance?: string | null;
 }
 interface App {
   id: string;
@@ -173,6 +218,7 @@ const actionHeaders = [
 ];
 
 const actionDialog = ref(false);
+const actionTab = ref('properties');
 const editingAction = ref<Action | null>(null);
 const actionForm = ref({
   key: '',
@@ -182,6 +228,16 @@ const actionForm = ref({
   bodySchemaJson: '{}',
   querySchemaJson: '{}',
   pathSchemaJson: '{}',
+  model: '' as string | null,
+  operation: 'NONE' as string,
+  isGraphQL: false,
+  hasPaginationLimit: false,
+  hasPaginationOffset: false,
+  hasCustomArguments: false,
+  hasFilters: false,
+  hasSorting: false,
+  notes: '' as string | null,
+  notesAppearance: null as string | null,
 });
 const actionError = ref('');
 const actionSaving = ref(false);
@@ -217,6 +273,7 @@ async function loadConnections() {
 
 function openActionDialog(action?: Action) {
   editingAction.value = action ?? null;
+  actionTab.value = 'properties';
   if (action) {
     actionForm.value = {
       key: action.key,
@@ -226,6 +283,16 @@ function openActionDialog(action?: Action) {
       bodySchemaJson: JSON.stringify(action.bodySchema ?? {}, null, 2),
       querySchemaJson: JSON.stringify(action.querySchema ?? {}, null, 2),
       pathSchemaJson: JSON.stringify(action.pathSchema ?? {}, null, 2),
+      model: action.model ?? null,
+      operation: action.operation ?? 'NONE',
+      isGraphQL: action.isGraphQL ?? false,
+      hasPaginationLimit: action.hasPaginationLimit ?? false,
+      hasPaginationOffset: action.hasPaginationOffset ?? false,
+      hasCustomArguments: action.hasCustomArguments ?? false,
+      hasFilters: action.hasFilters ?? false,
+      hasSorting: action.hasSorting ?? false,
+      notes: action.notes ?? null,
+      notesAppearance: action.notesAppearance ?? null,
     };
   } else {
     actionForm.value = {
@@ -236,6 +303,16 @@ function openActionDialog(action?: Action) {
       bodySchemaJson: '{}',
       querySchemaJson: '{}',
       pathSchemaJson: '{}',
+      model: null,
+      operation: 'NONE',
+      isGraphQL: false,
+      hasPaginationLimit: false,
+      hasPaginationOffset: false,
+      hasCustomArguments: false,
+      hasFilters: false,
+      hasSorting: false,
+      notes: null,
+      notesAppearance: null,
     };
   }
   actionError.value = '';
@@ -262,6 +339,18 @@ async function saveAction() {
   actionSaving.value = true;
   actionError.value = '';
   try {
+    const props = {
+      model: actionForm.value.model || null,
+      operation: actionForm.value.operation === 'NONE' ? null : actionForm.value.operation,
+      isGraphQL: actionForm.value.isGraphQL,
+      hasPaginationLimit: actionForm.value.hasPaginationLimit,
+      hasPaginationOffset: actionForm.value.hasPaginationOffset,
+      hasCustomArguments: actionForm.value.hasCustomArguments,
+      hasFilters: actionForm.value.hasFilters,
+      hasSorting: actionForm.value.hasSorting,
+      notes: actionForm.value.notes || null,
+      notesAppearance: actionForm.value.notesAppearance || null,
+    };
     if (editingAction.value) {
       await api.patch(`/actions/${editingAction.value.id}`, {
         name: actionForm.value.name,
@@ -270,6 +359,7 @@ async function saveAction() {
         bodySchema,
         querySchema,
         pathSchema,
+        ...props,
       });
     } else {
       if (!appVersionId.value) return;
@@ -281,6 +371,7 @@ async function saveAction() {
         bodySchema,
         querySchema,
         pathSchema,
+        ...props,
       });
     }
     actionDialog.value = false;
