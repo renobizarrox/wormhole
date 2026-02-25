@@ -1,15 +1,10 @@
+/**
+ * Apollo plugin placeholder.
+ *
+ * @nuxtjs/apollo is already configured in `nuxt.config.ts` to use cookie token storage.
+ * We don't need any manual `setHeaders` calls here, and older examples using
+ * `apolloClient.setHeaders` are incompatible with the current client instance.
+ */
 export default defineNuxtPlugin(() => {
-  const { $apollo } = useNuxtApp();
-  const authStore = useAuthStore();
-  const tokenCookie = useCookie('auth-token');
-
-  // Set auth token in Apollo client headers
-  if (tokenCookie.value) {
-    const apolloClient = $apollo?.defaultClient;
-    if (apolloClient) {
-      apolloClient.setHeaders({
-        Authorization: `Bearer ${tokenCookie.value}`,
-      });
-    }
-  }
+  // Intentionally left blank for now.
 });
