@@ -36,7 +36,7 @@
             <v-list>
               <v-list-item v-for="(step, idx) in steps" :key="idx" class="d-flex align-center">
                 <span class="mr-2">{{ idx + 1 }}.</span>
-                <span class="flex-grow-1">{{ stepActionName(step.actionId) }}</span>
+                <span class="flex-grow-1">{{ stepLabel(step) }}</span>
                 <v-btn icon size="small" variant="text" @click="moveStep(idx, -1)" :disabled="idx === 0">
                   <v-icon>mdi-arrow-up</v-icon>
                 </v-btn>
@@ -50,24 +50,94 @@
             </v-list>
             <v-divider class="my-2" />
             <v-select
-              v-model="newStepActionId"
-              label="Add step (action)"
-              :items="allActionsFlat"
-              item-title="label"
-              item-value="id"
-              clearable
+              v-model="newStepType"
+              label="Step type"
+              :items="[{ title: 'Action (API call)', value: 'action' }, { title: 'Map', value: 'MAP' }, { title: 'Filter', value: 'FILTER' }, { title: 'Loop', value: 'LOOP' }, { title: 'If', value: 'IF' }]"
               class="mb-2"
             />
-            <v-select
-              v-if="newStepActionId"
-              v-model="newStepConnectionId"
-              label="Connection (optional)"
-              :items="connectionsForSelectedAction"
-              item-title="name"
-              item-value="id"
-              clearable
-            />
-            <v-btn class="mt-2" color="primary" size="small" :disabled="!newStepActionId" @click="addStep">
+            <template v-if="newStepType === 'action'">
+              <v-select
+                v-model="newStepActionId"
+                label="Action"
+                :items="allActionsFlat"
+                item-title="label"
+                item-value="id"
+                clearable
+                class="mb-2"
+              />
+              <v-select
+                v-if="newStepActionId"
+                v-model="newStepConnectionId"
+                label="Connection (optional)"
+                :items="connectionsForSelectedAction"
+                item-title="name"
+                item-value="id"
+                clearable
+              />
+            </template>
+            <template v-else-if="newStepType === 'MAP' || newStepType === 'FILTER'">
+              <v-select
+                v-model="newNativeSourceStepKey"
+                label="Source step"
+                :items="steps.map(s => s.stepKey)"
+                class="mb-2"
+              />
+              <v-textarea v-model="newNativeCode" :label="newStepType === 'MAP' ? 'Code (return array)' : 'Code (return filtered array)'" rows="3" class="mb-2" />
+            </template>
+            <template v-else-if="newStepType === 'LOOP'">
+              <v-select
+                v-model="newLoopSourceStepKey"
+                label="Source step (array)"
+                :items="steps.map(s => s.stepKey)"
+                class="mb-2"
+              />
+              <p class="text-caption text-medium-emphasis mb-1">Body steps (run per item; use $.currentItem in mappings)</p>
+              <v-list density="compact" class="mb-2">
+                <v-list-item v-for="(body, bi) in newLoopBodySteps" :key="bi" class="d-flex align-center">
+                  <v-select
+                    v-model="body.actionId"
+                    :items="allActionsFlat"
+                    item-title="label"
+                    item-value="id"
+                    density="compact"
+                    hide-details
+                    class="flex-grow-1 mr-2"
+                  />
+                  <v-btn icon size="x-small" variant="text" @click="newLoopBodySteps.splice(bi, 1)"><v-icon>mdi-delete</v-icon></v-btn>
+                </v-list-item>
+              </v-list>
+              <v-btn size="small" variant="outlined" @click="newLoopBodySteps.push({ stepKey: `loop_body_${Date.now()}`, actionId: allActionsFlat[0]?.id ?? '' })">Add body step</v-btn>
+            </template>
+            <template v-else-if="newStepType === 'IF'">
+              <v-select
+                v-model="newIfSourceStepKey"
+                label="Source step"
+                :items="steps.map(s => s.stepKey)"
+                class="mb-2"
+              />
+              <p class="text-caption text-medium-emphasis mb-1">Branches (first matching condition runs its steps)</p>
+              <div v-for="(branch, bi) in newIfBranches" :key="bi" class="mb-2 pa-2 border rounded">
+                <v-text-field v-model="branch.condition" label="Condition (JS on input)" density="compact" placeholder="input.count > 0" />
+                <v-list density="compact">
+                  <v-list-item v-for="(s, si) in branch.steps" :key="si" class="d-flex align-center">
+                    <v-select v-model="s.actionId" :items="allActionsFlat" item-title="label" item-value="id" density="compact" hide-details class="flex-grow-1 mr-2" />
+                    <v-btn icon size="x-small" variant="text" @click="branch.steps.splice(si, 1)"><v-icon>mdi-delete</v-icon></v-btn>
+                  </v-list-item>
+                </v-list>
+                <v-btn size="x-small" variant="text" @click="branch.steps.push({ stepKey: `if_${bi}_${branch.steps.length}`, actionId: allActionsFlat[0]?.id ?? '' })">+ Step</v-btn>
+                <v-btn size="x-small" variant="text" color="error" @click="newIfBranches.splice(bi, 1)">Remove branch</v-btn>
+              </div>
+              <v-btn size="small" variant="outlined" class="mr-2" @click="newIfBranches.push({ condition: '', steps: [] })">+ Branch</v-btn>
+              <p class="text-caption mt-2">Else steps (optional)</p>
+              <v-list density="compact">
+                <v-list-item v-for="(s, si) in newIfElseSteps" :key="si" class="d-flex align-center">
+                  <v-select v-model="s.actionId" :items="allActionsFlat" item-title="label" item-value="id" density="compact" hide-details class="flex-grow-1 mr-2" />
+                  <v-btn icon size="x-small" variant="text" @click="newIfElseSteps.splice(si, 1)"><v-icon>mdi-delete</v-icon></v-btn>
+                </v-list-item>
+              </v-list>
+              <v-btn size="x-small" variant="text" @click="newIfElseSteps.push({ stepKey: `else_${newIfElseSteps.length}`, actionId: allActionsFlat[0]?.id ?? '' })">+ Else step</v-btn>
+            </template>
+            <v-btn class="mt-2" color="primary" size="small" :disabled="!canAddNewStep" @click="addStep">
               Add step
             </v-btn>
             <v-btn class="mt-2 ml-2" color="secondary" size="small" :loading="saving" :disabled="!dirty" @click="saveVersion">
@@ -127,10 +197,46 @@ definePageMeta({
   middleware: 'auth',
 });
 
-interface StepDef {
+/** App action step */
+interface AppStepDef {
   stepKey: string;
   actionId: string;
   connectionId?: string;
+  inputMapping?: Record<string, unknown>;
+}
+/** Native: Map - transform source output with JS, return array */
+interface MapStepDef {
+  stepKey: string;
+  type: 'MAP';
+  sourceStepKey: string;
+  code: string;
+}
+/** Native: Filter - filter source array with JS */
+interface FilterStepDef {
+  stepKey: string;
+  type: 'FILTER';
+  sourceStepKey: string;
+  code: string;
+}
+/** Native: Loop - run body steps for each item in source array */
+interface LoopStepDef {
+  stepKey: string;
+  type: 'LOOP';
+  sourceStepKey: string;
+  bodySteps: AppStepDef[];
+}
+/** Native: IF - run first matching branch or else steps */
+interface IfStepDef {
+  stepKey: string;
+  type: 'IF';
+  sourceStepKey: string;
+  branches: { condition: string; steps: AppStepDef[] }[];
+  elseSteps?: AppStepDef[];
+}
+type StepDef = AppStepDef | MapStepDef | FilterStepDef | LoopStepDef | IfStepDef;
+
+function isAppStep(s: StepDef): s is AppStepDef {
+  return 'actionId' in s && typeof (s as AppStepDef).actionId === 'string';
 }
 interface WorkflowVersion {
   id: string;
@@ -225,6 +331,34 @@ function stepActionName(actionId: string) {
   return a?.label ?? actionId;
 }
 
+function stepLabel(step: StepDef): string {
+  if (isAppStep(step)) return stepActionName(step.actionId);
+  switch (step.type) {
+    case 'MAP': return `Map (from ${step.sourceStepKey})`;
+    case 'FILTER': return `Filter (from ${step.sourceStepKey})`;
+    case 'LOOP': return `Loop (from ${step.sourceStepKey}, ${step.bodySteps?.length ?? 0} body steps)`;
+    case 'IF': return `If (from ${step.sourceStepKey})`;
+    default: return (step as { stepKey: string }).stepKey;
+  }
+}
+
+const newStepType = ref<'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF'>('action');
+const newNativeSourceStepKey = ref('');
+const newNativeCode = ref('');
+const newLoopSourceStepKey = ref('');
+const newLoopBodySteps = ref<{ stepKey: string; actionId: string }[]>([]);
+const newIfSourceStepKey = ref('');
+const newIfBranches = ref<{ condition: string; steps: { stepKey: string; actionId: string }[] }[]>([]);
+const newIfElseSteps = ref<{ stepKey: string; actionId: string }[]>([]);
+
+const canAddNewStep = computed(() => {
+  if (newStepType.value === 'action') return !!newStepActionId.value;
+  if (newStepType.value === 'MAP' || newStepType.value === 'FILTER') return !!newNativeSourceStepKey.value && !!newNativeCode.value.trim();
+  if (newStepType.value === 'LOOP') return !!newLoopSourceStepKey.value && newLoopBodySteps.value.length > 0;
+  if (newStepType.value === 'IF') return !!newIfSourceStepKey.value && newIfBranches.value.some(b => b.condition.trim());
+  return false;
+});
+
 async function loadWorkflow() {
   try {
     workflow.value = await api.get<Workflow>(`/workflows/${workflowId.value}`);
@@ -264,15 +398,67 @@ async function loadAppsAndConnections() {
 }
 
 function addStep() {
-  if (!newStepActionId.value) return;
-  const stepKey = `step_${steps.value.length + 1}`;
-  steps.value.push({
-    stepKey,
-    actionId: newStepActionId.value,
-    connectionId: newStepConnectionId.value ?? undefined,
-  });
-  newStepActionId.value = null;
-  newStepConnectionId.value = null;
+  const stepKey = `step_${Date.now()}`;
+  if (newStepType.value === 'action') {
+    if (!newStepActionId.value) return;
+    steps.value.push({
+      stepKey,
+      actionId: newStepActionId.value,
+      connectionId: newStepConnectionId.value ?? undefined,
+    });
+    newStepActionId.value = null;
+    newStepConnectionId.value = null;
+  } else if (newStepType.value === 'MAP') {
+    steps.value.push({
+      stepKey,
+      type: 'MAP',
+      sourceStepKey: newNativeSourceStepKey.value,
+      code: newNativeCode.value.trim(),
+    });
+    newNativeSourceStepKey.value = '';
+    newNativeCode.value = '';
+  } else if (newStepType.value === 'FILTER') {
+    steps.value.push({
+      stepKey,
+      type: 'FILTER',
+      sourceStepKey: newNativeSourceStepKey.value,
+      code: newNativeCode.value.trim(),
+    });
+    newNativeSourceStepKey.value = '';
+    newNativeCode.value = '';
+  } else if (newStepType.value === 'LOOP') {
+    const body = newLoopBodySteps.value.map((b, i) => ({
+      stepKey: `${stepKey}_body_${i}`,
+      actionId: b.actionId,
+      connectionId: undefined as string | undefined,
+    }));
+    steps.value.push({
+      stepKey,
+      type: 'LOOP',
+      sourceStepKey: newLoopSourceStepKey.value,
+      bodySteps: body,
+    });
+    newLoopSourceStepKey.value = '';
+    newLoopBodySteps.value = [];
+  } else if (newStepType.value === 'IF') {
+    const branches = newIfBranches.value
+      .filter(b => b.condition.trim())
+      .map(b => ({
+        condition: b.condition.trim(),
+        steps: b.steps.filter(s => s.actionId).map((s, i) => ({ stepKey: `${stepKey}_b_${i}`, actionId: s.actionId, connectionId: undefined as string | undefined })),
+      }));
+    const elseSteps = newIfElseSteps.value.filter(s => s.actionId).map((s, i) => ({ stepKey: `${stepKey}_else_${i}`, actionId: s.actionId, connectionId: undefined as string | undefined }));
+    steps.value.push({
+      stepKey,
+      type: 'IF',
+      sourceStepKey: newIfSourceStepKey.value,
+      branches,
+      elseSteps: elseSteps.length ? elseSteps : undefined,
+    });
+    newIfSourceStepKey.value = '';
+    newIfBranches.value = [];
+    newIfElseSteps.value = [];
+  }
   dirty.value = true;
 }
 

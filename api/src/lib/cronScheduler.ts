@@ -18,7 +18,7 @@ async function fireCronTrigger(
   if (!trigger || !trigger.isActive || trigger.type !== 'CRON' || !trigger.cronExpression) return;
   const version = trigger.workflow.versions[0];
   if (!version) return;
-  const graph = version.graph as { steps?: { stepKey: string; actionId: string }[] };
+  const graph = version.graph as { steps?: { stepKey: string; actionId?: string }[] };
   const steps = graph?.steps ?? [];
   try {
     const run = await prisma.workflowRun.create({
@@ -36,7 +36,7 @@ async function fireCronTrigger(
         data: {
           workflowRunId: run.id,
           stepKey: s.stepKey,
-          actionId: s.actionId,
+          actionId: 'actionId' in s ? s.actionId ?? null : null,
           status: 'QUEUED',
         },
       });

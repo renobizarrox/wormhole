@@ -46,7 +46,7 @@ export default async function runsRoutes(app: FastifyInstance) {
       if (!version) {
         return reply.status(400).send({ code: 'VALIDATION_ERROR', message: 'No published version to run' });
       }
-      const graph = version.graph as { steps?: { stepKey: string; actionId: string }[] };
+      const graph = version.graph as { steps?: { stepKey: string; actionId?: string }[] };
       const steps = graph?.steps ?? [];
       if (body.data.idempotencyKey) {
         const existing = await prisma.workflowRun.findFirst({
@@ -75,7 +75,7 @@ export default async function runsRoutes(app: FastifyInstance) {
           data: {
             workflowRunId: run.id,
             stepKey: s.stepKey,
-            actionId: s.actionId,
+            actionId: 'actionId' in s ? s.actionId ?? null : null,
             status: 'QUEUED',
           },
         });
@@ -218,7 +218,7 @@ export default async function runsRoutes(app: FastifyInstance) {
           data: {
             workflowRunId: run.id,
             stepKey: s.stepKey,
-            actionId: s.actionId,
+            actionId: 'actionId' in s ? s.actionId ?? null : null,
             status: 'QUEUED',
           },
         });

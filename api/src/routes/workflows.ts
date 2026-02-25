@@ -19,14 +19,50 @@ const updateWorkflowBody = z.object({
   status: z.enum(['Draft', 'Active', 'Archived']).optional(),
 });
 
-/** graph.steps: { stepKey, actionId, connectionId?, inputMapping? }[] */
+const appStepSchema = z.object({
+  stepKey: z.string(),
+  actionId: z.string().uuid(),
+  connectionId: z.string().uuid().optional(),
+  inputMapping: z.record(z.unknown()).optional(),
+});
+
+const mapStepSchema = z.object({
+  stepKey: z.string(),
+  type: z.literal('MAP'),
+  sourceStepKey: z.string(),
+  code: z.string(),
+});
+
+const filterStepSchema = z.object({
+  stepKey: z.string(),
+  type: z.literal('FILTER'),
+  sourceStepKey: z.string(),
+  code: z.string(),
+});
+
+const stepDefSchema: z.ZodType<unknown> = z.lazy(() =>
+  z.union([
+    appStepSchema,
+    mapStepSchema,
+    filterStepSchema,
+    z.object({
+      stepKey: z.string(),
+      type: z.literal('LOOP'),
+      sourceStepKey: z.string(),
+      bodySteps: z.array(stepDefSchema),
+    }),
+    z.object({
+      stepKey: z.string(),
+      type: z.literal('IF'),
+      sourceStepKey: z.string(),
+      branches: z.array(z.object({ condition: z.string(), steps: z.array(stepDefSchema) })),
+      elseSteps: z.array(stepDefSchema).optional(),
+    }),
+  ])
+);
+
 const graphSchema = z.object({
-  steps: z.array(z.object({
-    stepKey: z.string(),
-    actionId: z.string().uuid(),
-    connectionId: z.string().uuid().optional(),
-    inputMapping: z.record(z.unknown()).optional(),
-  })),
+  steps: z.array(stepDefSchema),
 });
 
 const createVersionBody = z.object({

@@ -44,7 +44,7 @@ export default async function webhooksRoutes(app: FastifyInstance) {
           return reply.status(401).send({ code: 'UNAUTHORIZED', message: 'Invalid signature' });
         }
       }
-      const graph = version.graph as { steps?: { stepKey: string; actionId: string }[] };
+      const graph = version.graph as { steps?: { stepKey: string; actionId?: string }[] };
       const steps = graph?.steps ?? [];
       const run = await prisma.workflowRun.create({
         data: {
@@ -61,7 +61,7 @@ export default async function webhooksRoutes(app: FastifyInstance) {
           data: {
             workflowRunId: run.id,
             stepKey: s.stepKey,
-            actionId: s.actionId,
+            actionId: 'actionId' in s ? s.actionId ?? null : null,
             status: 'QUEUED',
           },
         });
