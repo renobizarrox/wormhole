@@ -4,7 +4,7 @@
  */
 export function useApi() {
   const config = useRuntimeConfig();
-  const base = `${config.public.apiBaseUrl}/api`;
+  const base = config.public.apiBaseUrl;
 
   function headers(): Record<string, string> {
     const token = useCookie('auth-token');
