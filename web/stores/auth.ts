@@ -31,7 +31,7 @@ export const useAuthStore = defineStore('auth', {
     hasRole: (state) => (role: string) => state.role === role,
   },
   actions: {
-    async login(credentials: { email: string; password: string; tenantId: string }) {
+    async login(credentials: { email: string; password: string }) {
       const config = useRuntimeConfig();
       const response = await $fetch(`${config.public.apiBaseUrl}/auth/login`, {
         method: 'POST',

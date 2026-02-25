@@ -65,6 +65,10 @@
             <v-list-item-subtitle>{{ tenantName }}</v-list-item-subtitle>
           </v-list-item>
           <v-divider />
+          <v-list-item :to="{ name: 'tenants' }">
+            <v-list-item-title>Switch Tenant</v-list-item-title>
+          </v-list-item>
+          <v-divider />
           <v-list-item @click="logout">
             <v-list-item-title>Logout</v-list-item-title>
           </v-list-item>

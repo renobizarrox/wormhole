@@ -17,12 +17,6 @@
           required
           :error-messages="errors.password"
         />
-        <v-text-field
-          v-model="tenantId"
-          label="Tenant ID"
-          required
-          :error-messages="errors.tenantId"
-        />
         <v-btn type="submit" color="primary" block :loading="loading">
           Login
         </v-btn>
@@ -41,7 +35,6 @@ definePageMeta({
 const authStore = useAuthStore();
 const email = ref('');
 const password = ref('');
-const tenantId = ref('');
 const loading = ref(false);
 const errors = ref<Record<string, string>>({});
 
@@ -52,7 +45,6 @@ const handleLogin = async () => {
     await authStore.login({
       email: email.value,
       password: password.value,
-      tenantId: tenantId.value,
     });
     navigateTo('/');
   } catch (error: any) {
