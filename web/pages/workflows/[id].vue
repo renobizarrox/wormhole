@@ -417,7 +417,7 @@ const newIfSourceStepKey = ref('');
 const newIfBranches = ref<{ condition: string; steps: { stepKey: string; actionId: string }[] }[]>([]);
 const newIfElseSteps = ref<{ stepKey: string; actionId: string }[]>([]);
 
-const blueprintCanvas = ref<HTMLElement | null>(null);
+const blueprintCanvas = ref<any | null>(null);
 const blueprintLane = ref<HTMLElement | null>(null);
 const draggingStepKey = ref<string | null>(null);
 const draggingTriggerId = ref<string | null>(null);
@@ -427,6 +427,12 @@ const pendingTriggerPosition = ref<{ x: number; y: number } | null>(null);
 
 /** Connection drag: from step output to another step input */
 const connectionDrag = ref<{ from: { stepKey: string; x: number; y: number }; x2: number; y2: number } | null>(null);
+
+function getCanvasElement(): HTMLElement | null {
+  const raw = blueprintCanvas.value as any;
+  if (!raw) return null;
+  return (raw.$el ?? raw) as HTMLElement;
+}
 
 const NODE_WIDTH = 240;
 const NODE_HEADER_H = 32;
@@ -462,8 +468,9 @@ function connectorLine(step: StepDef): { x1: number; y1: number; x2: number; y2:
 }
 
 function laneOffset() {
-  if (!blueprintCanvas.value) return { left: 0, top: 0 };
-  const r = blueprintCanvas.value.getBoundingClientRect();
+  const el = getCanvasElement();
+  if (!el) return { left: 0, top: 0 };
+  const r = el.getBoundingClientRect();
   return { left: r.left + 24, top: r.top + 24 };
 }
 
@@ -479,7 +486,8 @@ function onPortMouseDown(step: StepDef, event: MouseEvent) {
 }
 
 function onConnectionMouseMove(event: MouseEvent) {
-  if (!connectionDrag.value || !blueprintCanvas.value) return;
+  const el = getCanvasElement();
+  if (!connectionDrag.value || !el) return;
   const { left: laneLeft, top: laneTop } = laneOffset();
   connectionDrag.value.x2 = event.clientX - laneLeft;
   connectionDrag.value.y2 = event.clientY - laneTop;
@@ -508,7 +516,7 @@ function onConnectionMouseUp(event: MouseEvent) {
 }
 
 function onNodeMouseDown(step: StepDef, event: MouseEvent) {
-  if (!blueprintCanvas.value) return;
+  if (!getCanvasElement()) return;
   if ((event.target as HTMLElement).closest?.('button')) return;
   event.preventDefault();
   const target = event.currentTarget as HTMLElement;
@@ -520,10 +528,11 @@ function onNodeMouseDown(step: StepDef, event: MouseEvent) {
 }
 
 function onWindowMouseMove(event: MouseEvent) {
-  if (!draggingStepKey.value || !blueprintCanvas.value) return;
-  const canvasRect = blueprintCanvas.value.getBoundingClientRect();
-  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
-  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const el = getCanvasElement();
+  if (!draggingStepKey.value || !el) return;
+  const canvasRect = el.getBoundingClientRect();
+  const scrollLeft = el.scrollLeft ?? 0;
+  const scrollTop = el.scrollTop ?? 0;
   const laneLeft = canvasRect.left + 24;
   const laneTop = canvasRect.top + 24;
   const x = Math.round(event.clientX - laneLeft + scrollLeft - dragOffset.value.x);
@@ -552,7 +561,7 @@ function triggerNodeStyle(t: Trigger): Record<string, string> {
 }
 
 function onTriggerNodeMouseDown(t: Trigger, event: MouseEvent) {
-  if (!blueprintCanvas.value) return;
+  if (!getCanvasElement()) return;
   event.preventDefault();
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
@@ -563,10 +572,11 @@ function onTriggerNodeMouseDown(t: Trigger, event: MouseEvent) {
 }
 
 function onTriggerMouseMove(event: MouseEvent) {
-  if (!draggingTriggerId.value || !blueprintCanvas.value) return;
-  const canvasRect = blueprintCanvas.value.getBoundingClientRect();
-  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
-  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const el = getCanvasElement();
+  if (!draggingTriggerId.value || !el) return;
+  const canvasRect = el.getBoundingClientRect();
+  const scrollLeft = el.scrollLeft ?? 0;
+  const scrollTop = el.scrollTop ?? 0;
   const laneLeft = canvasRect.left + 24;
   const laneTop = canvasRect.top + 24;
   const x = Math.round(event.clientX - laneLeft + scrollLeft - dragOffset.value.x);
@@ -626,10 +636,11 @@ function onCanvasContextMenu(event: MouseEvent) {
 }
 
 function addStepFromContextAt(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF', clientX: number, clientY: number) {
-  if (!blueprintCanvas.value) return;
-  const rect = blueprintCanvas.value.getBoundingClientRect();
-  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
-  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const el = getCanvasElement();
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const scrollLeft = el.scrollLeft ?? 0;
+  const scrollTop = el.scrollTop ?? 0;
   const laneLeft = rect.left + 24;
   const laneTop = rect.top + 24;
   const canvasX = Math.round(clientX - laneLeft + scrollLeft);
@@ -658,10 +669,11 @@ function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
 }
 
 function addTriggerFromContextAt(clientX: number, clientY: number) {
-  if (!blueprintCanvas.value) return;
-  const rect = blueprintCanvas.value.getBoundingClientRect();
-  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
-  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const el = getCanvasElement();
+  if (!el) return;
+  const rect = el.getBoundingClientRect();
+  const scrollLeft = el.scrollLeft ?? 0;
+  const scrollTop = el.scrollTop ?? 0;
   const laneLeft = rect.left + 24;
   const laneTop = rect.top + 24;
   pendingTriggerPosition.value = {
