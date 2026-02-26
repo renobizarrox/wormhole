@@ -64,7 +64,7 @@
                   </div>
                 </div>
                 <div v-if="steps.length === 0" class="blueprint-empty-hint">
-                  Click \"Add step\" on the right to start your blueprint.
+                  Click Add step on the right to start your blueprint.
                 </div>
               </div>
             </v-sheet>
@@ -78,7 +78,7 @@
             <v-select
               v-model="newStepType"
               label="Step type"
-              :items=\"[{ title: 'Action (API call)', value: 'action' }, { title: 'Map', value: 'MAP' }, { title: 'Filter', value: 'FILTER' }, { title: 'Loop', value: 'LOOP' }, { title: 'If', value: 'IF' }]\"
+              :items="[{ title: 'Action (API call)', value: 'action' }, { title: 'Map', value: 'MAP' }, { title: 'Filter', value: 'FILTER' }, { title: 'Loop', value: 'LOOP' }, { title: 'If', value: 'IF' }]"
               class="mb-2"
             />
             <template v-if="newStepType === 'action'">
