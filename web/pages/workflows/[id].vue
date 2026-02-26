@@ -149,21 +149,6 @@
             />
           </svg>
         </v-sheet>
-        <!-- Context menu (fixed at cursor) -->
-        <div
-          v-if="contextMenu.open"
-          class="blueprint-context-menu"
-          :style="{ left: contextMenu.clientX + 'px', top: contextMenu.clientY + 'px' }"
-        >
-          <div class="blueprint-context-menu-item" @click="addStepFromContext('action')">Add Action</div>
-          <div class="blueprint-context-menu-item" @click="addStepFromContext('MAP')">Add Map</div>
-          <div class="blueprint-context-menu-item" @click="addStepFromContext('FILTER')">Add Filter</div>
-          <div class="blueprint-context-menu-item" @click="addStepFromContext('LOOP')">Add Loop</div>
-          <div class="blueprint-context-menu-item" @click="addStepFromContext('IF')">Add If</div>
-          <div class="blueprint-context-menu-divider"></div>
-          <div class="blueprint-context-menu-item" @click="addTriggerFromContext">Add Trigger</div>
-        </div>
-        <div v-if="contextMenu.open" class="blueprint-context-menu-backdrop" @click="contextMenu.open = false"></div>
       </v-card-text>
     </v-card>
 
@@ -206,6 +191,29 @@
         </v-card-actions>
       </v-card>
     </v-dialog>
+
+    <!-- Context menu: teleport to body so it's above everything and receives clicks -->
+    <Teleport to="body">
+      <template v-if="contextMenu.open">
+        <div
+          class="blueprint-context-menu-backdrop"
+          @click="contextMenu.open = false"
+        ></div>
+        <div
+          class="blueprint-context-menu"
+          :style="{ left: contextMenu.clientX + 'px', top: contextMenu.clientY + 'px' }"
+          role="menu"
+        >
+          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('action'))">Add Action</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('MAP'))">Add Map</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('FILTER'))">Add Filter</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('LOOP'))">Add Loop</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('IF'))">Add If</div>
+          <div class="blueprint-context-menu-divider"></div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(addTriggerFromContext)">Add Trigger</div>
+        </div>
+      </template>
+    </Teleport>
   </v-container>
 </template>
 
@@ -495,6 +503,7 @@ function onConnectionMouseUp(event: MouseEvent) {
 
 function onNodeMouseDown(step: StepDef, event: MouseEvent) {
   if (!blueprintCanvas.value) return;
+  event.preventDefault();
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
   draggingStepKey.value = step.stepKey;
@@ -506,8 +515,12 @@ function onNodeMouseDown(step: StepDef, event: MouseEvent) {
 function onWindowMouseMove(event: MouseEvent) {
   if (!draggingStepKey.value || !blueprintCanvas.value) return;
   const canvasRect = blueprintCanvas.value.getBoundingClientRect();
-  const x = event.clientX - canvasRect.left - dragOffset.value.x;
-  const y = event.clientY - canvasRect.top - dragOffset.value.y;
+  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
+  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const laneLeft = canvasRect.left + 24;
+  const laneTop = canvasRect.top + 24;
+  const x = Math.round(event.clientX - laneLeft + scrollLeft - dragOffset.value.x);
+  const y = Math.round(event.clientY - laneTop + scrollTop - dragOffset.value.y);
   const step = steps.value.find(s => s.stepKey === draggingStepKey.value);
   if (step) {
     (step as { x?: number; y?: number }).x = x;
@@ -533,6 +546,7 @@ function triggerNodeStyle(t: Trigger): Record<string, string> {
 
 function onTriggerNodeMouseDown(t: Trigger, event: MouseEvent) {
   if (!blueprintCanvas.value) return;
+  event.preventDefault();
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
   draggingTriggerId.value = t.id;
@@ -544,8 +558,12 @@ function onTriggerNodeMouseDown(t: Trigger, event: MouseEvent) {
 function onTriggerMouseMove(event: MouseEvent) {
   if (!draggingTriggerId.value || !blueprintCanvas.value) return;
   const canvasRect = blueprintCanvas.value.getBoundingClientRect();
-  const x = event.clientX - canvasRect.left - dragOffset.value.x;
-  const y = event.clientY - canvasRect.top - dragOffset.value.y;
+  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
+  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const laneLeft = canvasRect.left + 24;
+  const laneTop = canvasRect.top + 24;
+  const x = Math.round(event.clientX - laneLeft + scrollLeft - dragOffset.value.x);
+  const y = Math.round(event.clientY - laneTop + scrollTop - dragOffset.value.y);
   triggerPositions.value = { ...triggerPositions.value, [draggingTriggerId.value]: { x, y } };
   dirty.value = true;
 }
@@ -576,6 +594,11 @@ function onNodeContextMenu(step: StepDef, idx: number, event: MouseEvent) {
 }
 
 const contextMenu = ref<{ open: boolean; clientX: number; clientY: number; nodeIdx?: number }>({ open: false, clientX: 0, clientY: 0 });
+
+function closeMenuAndRun(fn: () => void) {
+  contextMenu.value.open = false;
+  fn();
+}
 
 function onCanvasContextMenu(event: MouseEvent) {
   selectedStepKey.value = null;
@@ -978,7 +1001,7 @@ onMounted(loadAppsAndConnections);
 
 .blueprint-context-menu {
   position: fixed;
-  z-index: 1000;
+  z-index: 10000;
   min-width: 160px;
   padding: 4px 0;
   background: rgb(var(--v-theme-surface));
@@ -1005,7 +1028,8 @@ onMounted(loadAppsAndConnections);
 .blueprint-context-menu-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 999;
+  z-index: 9998;
+  cursor: default;
 }
 
 .blueprint-node-header {
@@ -1042,12 +1066,15 @@ onMounted(loadAppsAndConnections);
 .port {
   width: 12px;
   height: 12px;
+  padding: 10px;
+  margin: -10px;
   border-radius: 50%;
   border: 2px solid #90caf9;
   background: #0b1020;
   pointer-events: auto;
   cursor: crosshair;
   flex-shrink: 0;
+  box-sizing: content-box;
 }
 
 .blueprint-node-trigger .blueprint-node-ports {
