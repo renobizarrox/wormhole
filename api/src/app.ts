@@ -18,10 +18,29 @@ export async function buildApp() {
   const app = Fastify({ logger: config.NODE_ENV !== 'test' });
 
   await app.register(cors, {
-    origin: config.CORS_ORIGIN === 'true' || !config.CORS_ORIGIN
-      ? true
-      : config.CORS_ORIGIN.split(',').map((s) => s.trim()),
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true);
+      if (config.CORS_ORIGIN === 'true' || !config.CORS_ORIGIN) {
+        try {
+          const u = new URL(origin);
+          const host = u.hostname;
+          const isLocal =
+            host === 'localhost' ||
+            host === '127.0.0.1' ||
+            host.startsWith('192.168.') ||
+            host.startsWith('10.') ||
+            /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host);
+          return cb(null, isLocal);
+        } catch {
+          return cb(null, false);
+        }
+      }
+      const allowed = config.CORS_ORIGIN.split(',').map((s) => s.trim());
+      return cb(null, allowed.includes(origin));
+    },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
   await app.register(authPlugin);
