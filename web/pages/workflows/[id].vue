@@ -99,33 +99,40 @@
               </div>
               <div class="blueprint-node-body">
                 <div class="blueprint-node-ports">
-                  <div
-                    v-if="hasInputPort(step)"
-                    class="port port-in"
-                    data-port="in"
-                    :data-step-key="step.stepKey"
-                  ></div>
-                  <template v-if="isIfStep(step)">
+                  <div class="blueprint-node-ports-left">
                     <div
-                      class="port port-out port-out-then"
-                      data-port="out-then"
+                      v-if="hasInputPort(step)"
+                      class="port port-in"
+                      data-port="in"
+                      :data-step-key="step.stepKey"
+                    ></div>
+                  </div>
+                  <div
+                    class="blueprint-node-ports-right"
+                    :class="{ 'blueprint-node-ports-right-if': isIfStep(step) }"
+                  >
+                    <template v-if="isIfStep(step)">
+                      <div
+                        class="port port-out port-out-then"
+                        data-port="out-then"
+                        :data-step-key="step.stepKey"
+                        @mousedown.stop="onPortMouseDown(step, $event)"
+                      ></div>
+                      <div
+                        class="port port-out port-out-else"
+                        data-port="out-else"
+                        :data-step-key="step.stepKey"
+                        @mousedown.stop="onPortMouseDown(step, $event)"
+                      ></div>
+                    </template>
+                    <div
+                      v-else
+                      class="port port-out"
+                      data-port="out"
                       :data-step-key="step.stepKey"
                       @mousedown.stop="onPortMouseDown(step, $event)"
                     ></div>
-                    <div
-                      class="port port-out port-out-else"
-                      data-port="out-else"
-                      :data-step-key="step.stepKey"
-                      @mousedown.stop="onPortMouseDown(step, $event)"
-                    ></div>
-                  </template>
-                  <div
-                    v-else
-                    class="port port-out"
-                    data-port="out"
-                    :data-step-key="step.stepKey"
-                    @mousedown.stop="onPortMouseDown(step, $event)"
-                  ></div>
+                  </div>
                 </div>
                 <p class="blueprint-node-label">{{ stepLabel(step) }}</p>
                 <p class="blueprint-node-meta">Key: {{ step.stepKey }}</p>
@@ -629,8 +636,18 @@ function onConnectionMouseUp(event: MouseEvent) {
       if (from.kind === 'step') {
         const newSourceKey = from.key;
         steps.value = steps.value.map((s) => {
-          if (s.stepKey !== stepKey) return s;
-          return { ...s, sourceStepKey: newSourceKey } as StepDef;
+          if (!('sourceStepKey' in s)) return s;
+          const any = s as any;
+          const current = any.sourceStepKey as string | undefined;
+          // Clear any previous connection from this output
+          if (current === newSourceKey && s.stepKey !== stepKey) {
+            return { ...s, sourceStepKey: undefined } as StepDef;
+          }
+          // Set connection on the newly targeted step
+          if (s.stepKey === stepKey) {
+            return { ...s, sourceStepKey: newSourceKey } as StepDef;
+          }
+          return s;
         });
       } else if (from.kind === 'trigger') {
         const trigId = from.key;
@@ -1284,11 +1301,27 @@ onMounted(loadAppsAndConnections);
   pointer-events: none;
 }
 
+.blueprint-node-ports-left,
+.blueprint-node-ports-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.blueprint-node-ports-right {
+  justify-content: flex-end;
+}
+
+.blueprint-node-ports-right-if {
+  flex-direction: column;
+  align-items: flex-end;
+}
+
 .port {
   width: 8px;
   height: 8px;
-  padding: 10px;
-  margin: -10px;
+  padding: 6px;
+  margin: -6px;
   border-radius: 50%;
   border: 2px solid #90caf9;
   background: #0b1020;
@@ -1298,14 +1331,8 @@ onMounted(loadAppsAndConnections);
   box-sizing: content-box;
 }
 
-.blueprint-node-trigger .blueprint-node-ports {
+.blueprint-node-trigger .blueprint-node-ports-right {
   justify-content: flex-end;
-}
-
-.blueprint-node-if .blueprint-node-ports {
-  flex-direction: column;
-  align-items: flex-end;
-  justify-content: center;
 }
 
 .port-in {
