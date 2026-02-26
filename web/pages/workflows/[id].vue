@@ -33,13 +33,19 @@
         <v-card class="mb-4">
           <v-card-title>Blueprint</v-card-title>
           <v-card-text>
-            <v-sheet class="blueprint-canvas" rounded>
+            <v-sheet
+              ref="blueprintCanvas"
+              class="blueprint-canvas"
+              rounded
+              @contextmenu.prevent="onCanvasContextMenu"
+            >
               <div class="blueprint-lane">
                 <div
                   v-for="(step, idx) in steps"
                   :key="step.stepKey"
                   class="blueprint-node"
-                  :style="{ borderColor: nodeColor(step) }"
+                  :style="nodeStyle(step, idx)"
+                  @mousedown.stop="onNodeMouseDown(step, $event)"
                 >
                   <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
                     <span class="blueprint-node-title">{{ nodeType(step) }}</span>
@@ -68,6 +74,29 @@
                 </div>
               </div>
             </v-sheet>
+            <v-menu
+              v-model="contextMenu.open"
+              :location="{ x: contextMenu.x, y: contextMenu.y }"
+              absolute
+            >
+              <v-list density="compact">
+                <v-list-item @click="addStepFromContext('action')">
+                  <v-list-item-title>Add Action</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="addStepFromContext('MAP')">
+                  <v-list-item-title>Add Map</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="addStepFromContext('FILTER')">
+                  <v-list-item-title>Add Filter</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="addStepFromContext('LOOP')">
+                  <v-list-item-title>Add Loop</v-list-item-title>
+                </v-list-item>
+                <v-list-item @click="addStepFromContext('IF')">
+                  <v-list-item-title>Add If</v-list-item-title>
+                </v-list-item>
+              </v-list>
+            </v-menu>
           </v-card-text>
         </v-card>
       </v-col>
@@ -288,6 +317,8 @@ interface AppStepDef {
   actionId: string;
   connectionId?: string;
   inputMapping?: Record<string, unknown>;
+  x?: number;
+  y?: number;
 }
 /** Native: Map - transform source output with JS, return array */
 interface MapStepDef {
@@ -295,6 +326,8 @@ interface MapStepDef {
   type: 'MAP';
   sourceStepKey: string;
   code: string;
+  x?: number;
+  y?: number;
 }
 /** Native: Filter - filter source array with JS */
 interface FilterStepDef {
@@ -302,6 +335,8 @@ interface FilterStepDef {
   type: 'FILTER';
   sourceStepKey: string;
   code: string;
+  x?: number;
+  y?: number;
 }
 /** Native: Loop - run body steps for each item in source array */
 interface LoopStepDef {
@@ -309,6 +344,8 @@ interface LoopStepDef {
   type: 'LOOP';
   sourceStepKey: string;
   bodySteps: AppStepDef[];
+  x?: number;
+  y?: number;
 }
 /** Native: IF - run first matching branch or else steps */
 interface IfStepDef {
@@ -317,6 +354,8 @@ interface IfStepDef {
   sourceStepKey: string;
   branches: { condition: string; steps: AppStepDef[] }[];
   elseSteps?: AppStepDef[];
+  x?: number;
+  y?: number;
 }
 type StepDef = AppStepDef | MapStepDef | FilterStepDef | LoopStepDef | IfStepDef;
 
@@ -443,6 +482,17 @@ function nodeColor(step: StepDef): string {
   }
 }
 
+function nodeStyle(step: StepDef, index: number) {
+  const anyStep = step as any;
+  const x = typeof anyStep.x === 'number' ? anyStep.x : index * 260;
+  const y = typeof anyStep.y === 'number' ? anyStep.y : 40;
+  return {
+    borderColor: nodeColor(step),
+    left: `${x}px`,
+    top: `${y}px`,
+  };
+}
+
 const newStepType = ref<'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF'>('action');
 const newNativeSourceStepKey = ref('');
 const newNativeCode = ref('');
@@ -451,6 +501,63 @@ const newLoopBodySteps = ref<{ stepKey: string; actionId: string }[]>([]);
 const newIfSourceStepKey = ref('');
 const newIfBranches = ref<{ condition: string; steps: { stepKey: string; actionId: string }[] }[]>([]);
 const newIfElseSteps = ref<{ stepKey: string; actionId: string }[]>([]);
+
+const blueprintCanvas = ref<HTMLElement | null>(null);
+const draggingStepKey = ref<string | null>(null);
+const dragOffset = ref({ x: 0, y: 0 });
+const pendingPosition = ref<{ x: number; y: number } | null>(null);
+
+function onNodeMouseDown(step: StepDef, event: MouseEvent) {
+  if (!blueprintCanvas.value) return;
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  draggingStepKey.value = step.stepKey;
+  dragOffset.value = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  window.addEventListener('mousemove', onWindowMouseMove);
+  window.addEventListener('mouseup', onWindowMouseUp);
+}
+
+function onWindowMouseMove(event: MouseEvent) {
+  if (!draggingStepKey.value || !blueprintCanvas.value) return;
+  const canvasRect = blueprintCanvas.value.getBoundingClientRect();
+  const x = event.clientX - canvasRect.left - dragOffset.value.x;
+  const y = event.clientY - canvasRect.top - dragOffset.value.y;
+  const step = steps.value.find(s => s.stepKey === draggingStepKey.value);
+  if (step) {
+    (step as any).x = x;
+    (step as any).y = y;
+    dirty.value = true;
+  }
+}
+
+function onWindowMouseUp() {
+  draggingStepKey.value = null;
+  window.removeEventListener('mousemove', onWindowMouseMove);
+  window.removeEventListener('mouseup', onWindowMouseUp);
+}
+
+const contextMenu = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
+
+function onCanvasContextMenu(event: MouseEvent) {
+  if (!blueprintCanvas.value) return;
+  const rect = blueprintCanvas.value.getBoundingClientRect();
+  contextMenu.value = {
+    open: true,
+    x: event.clientX - rect.left,
+    y: event.clientY - rect.top,
+  };
+}
+
+function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
+  newStepType.value = type;
+  pendingPosition.value = { x: contextMenu.value.x, y: contextMenu.value.y };
+  contextMenu.value.open = false;
+  // Best-effort defaults; user can refine in inspector
+  if (type === 'action' && !newStepActionId.value && allActionsFlat.value.length > 0) {
+    newStepActionId.value = allActionsFlat.value[0].id;
+  }
+  addStep();
+}
 
 const canAddNewStep = computed(() => {
   if (newStepType.value === 'action') return !!newStepActionId.value;
@@ -500,12 +607,15 @@ async function loadAppsAndConnections() {
 
 function addStep() {
   const stepKey = `step_${Date.now()}`;
+  const pos = pendingPosition.value ?? { x: steps.value.length * 260, y: 40 };
   if (newStepType.value === 'action') {
     if (!newStepActionId.value) return;
     steps.value.push({
       stepKey,
       actionId: newStepActionId.value,
       connectionId: newStepConnectionId.value ?? undefined,
+      x: pos.x,
+      y: pos.y,
     });
     newStepActionId.value = null;
     newStepConnectionId.value = null;
@@ -515,6 +625,8 @@ function addStep() {
       type: 'MAP',
       sourceStepKey: newNativeSourceStepKey.value,
       code: newNativeCode.value.trim(),
+      x: pos.x,
+      y: pos.y,
     });
     newNativeSourceStepKey.value = '';
     newNativeCode.value = '';
@@ -524,6 +636,8 @@ function addStep() {
       type: 'FILTER',
       sourceStepKey: newNativeSourceStepKey.value,
       code: newNativeCode.value.trim(),
+      x: pos.x,
+      y: pos.y,
     });
     newNativeSourceStepKey.value = '';
     newNativeCode.value = '';
@@ -538,6 +652,8 @@ function addStep() {
       type: 'LOOP',
       sourceStepKey: newLoopSourceStepKey.value,
       bodySteps: body,
+      x: pos.x,
+      y: pos.y,
     });
     newLoopSourceStepKey.value = '';
     newLoopBodySteps.value = [];
@@ -555,11 +671,14 @@ function addStep() {
       sourceStepKey: newIfSourceStepKey.value,
       branches,
       elseSteps: elseSteps.length ? elseSteps : undefined,
+      x: pos.x,
+      y: pos.y,
     });
     newIfSourceStepKey.value = '';
     newIfBranches.value = [];
     newIfElseSteps.value = [];
   }
+  pendingPosition.value = null;
   dirty.value = true;
 }
 

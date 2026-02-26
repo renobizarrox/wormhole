@@ -10,6 +10,8 @@ export interface AppStep {
   actionId: string;
   connectionId?: string;
   inputMapping?: Record<string, unknown>;
+  x?: number;
+  y?: number;
 }
 
 /** Map: transform output of source step with JS; must return array of objects */
@@ -18,6 +20,8 @@ export interface MapStep {
   type: 'MAP';
   sourceStepKey: string;
   code: string; // JS: (input) => array
+  x?: number;
+  y?: number;
 }
 
 /** Filter: filter array output of source step with JS */
@@ -26,6 +30,8 @@ export interface FilterStep {
   type: 'FILTER';
   sourceStepKey: string;
   code: string; // JS: (input) => filtered array, e.g. "input.filter(x => x.active)"
+  x?: number;
+  y?: number;
 }
 
 /** Nested step def (app or native) for Loop body / IF branches */
@@ -37,6 +43,8 @@ export interface LoopStep {
   type: 'LOOP';
   sourceStepKey: string;
   bodySteps: StepDef[];
+  x?: number;
+  y?: number;
 }
 
 /** IF: evaluate conditions on source output; run first matching branch steps or elseSteps */
@@ -46,6 +54,8 @@ export interface IfStep {
   sourceStepKey: string;
   branches: { condition: string; steps: StepDef[] }[]; // condition: JS expr on input, e.g. "input.count > 0"
   elseSteps?: StepDef[];
+  x?: number;
+  y?: number;
 }
 
 export function isAppStep(s: StepDef): s is AppStep {

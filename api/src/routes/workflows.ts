@@ -24,6 +24,8 @@ const appStepSchema = z.object({
   actionId: z.string().uuid(),
   connectionId: z.string().uuid().optional(),
   inputMapping: z.record(z.unknown()).optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
 });
 
 const mapStepSchema = z.object({
@@ -31,6 +33,8 @@ const mapStepSchema = z.object({
   type: z.literal('MAP'),
   sourceStepKey: z.string(),
   code: z.string(),
+  x: z.number().optional(),
+  y: z.number().optional(),
 });
 
 const filterStepSchema = z.object({
@@ -38,6 +42,8 @@ const filterStepSchema = z.object({
   type: z.literal('FILTER'),
   sourceStepKey: z.string(),
   code: z.string(),
+  x: z.number().optional(),
+  y: z.number().optional(),
 });
 
 const stepDefSchema: z.ZodType<unknown> = z.lazy(() =>
@@ -50,6 +56,8 @@ const stepDefSchema: z.ZodType<unknown> = z.lazy(() =>
       type: z.literal('LOOP'),
       sourceStepKey: z.string(),
       bodySteps: z.array(stepDefSchema),
+      x: z.number().optional(),
+      y: z.number().optional(),
     }),
     z.object({
       stepKey: z.string(),
@@ -57,6 +65,8 @@ const stepDefSchema: z.ZodType<unknown> = z.lazy(() =>
       sourceStepKey: z.string(),
       branches: z.array(z.object({ condition: z.string(), steps: z.array(stepDefSchema) })),
       elseSteps: z.array(stepDefSchema).optional(),
+      x: z.number().optional(),
+      y: z.number().optional(),
     }),
   ])
 );
