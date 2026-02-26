@@ -11,7 +11,7 @@ type RunContext = {
   stepRunsByKey: Map<string, { id: string }>;
 };
 
-function runUserCode<T>(code: string, input: unknown, description: string): T {
+function runUserCode<T>(code: string, input: unknown): T {
   const fn = new Function('input', `
     "use strict";
     try {
@@ -111,11 +111,7 @@ async function executeAppStep(
   return output;
 }
 
-async function executeOneStep(
-  stepDef: StepDef,
-  ctx: RunContext,
-  stepRunId?: string
-): Promise<unknown> {
+async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknown> {
   if (isAppStep(stepDef)) {
     return executeAppStep(stepDef, ctx);
   }
@@ -128,14 +124,14 @@ async function executeOneStep(
 
   switch (native.type) {
     case 'MAP': {
-      const result = runUserCode<unknown[]>(native.code, sourceOutput, 'Map');
+      const result = runUserCode<unknown[]>(native.code, sourceOutput);
       if (!Array.isArray(result)) {
         throw new Error('Map code must return an array');
       }
       return result;
     }
     case 'FILTER': {
-      const result = runUserCode<unknown[]>(native.code, sourceOutput, 'Filter');
+      const result = runUserCode<unknown[]>(native.code, sourceOutput);
       if (!Array.isArray(result)) {
         throw new Error('Filter code must return an array');
       }
