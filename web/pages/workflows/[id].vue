@@ -57,10 +57,10 @@
               <div class="blueprint-node-header" style="background-color: #7e57c2;">
                 <span class="blueprint-node-title">Trigger</span>
                 <v-spacer />
-                <v-btn icon size="x-small" variant="text" @click.stop="editTrigger(t)">
+                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="editTrigger(t)">
                   <v-icon size="14">mdi-pencil</v-icon>
                 </v-btn>
-                <v-btn icon size="x-small" variant="text" @click.stop="confirmDeleteTrigger(t)">
+                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="confirmDeleteTrigger(t)">
                   <v-icon size="14">mdi-close</v-icon>
                 </v-btn>
               </div>
@@ -87,13 +87,13 @@
               <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
                 <span class="blueprint-node-title">{{ nodeType(step) }}</span>
                 <v-spacer />
-                <v-btn icon size="x-small" variant="text" @click.stop="moveStep(idx, -1)" :disabled="idx === 0">
+                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="moveStep(idx, -1)" :disabled="idx === 0">
                   <v-icon size="16">mdi-arrow-left</v-icon>
                 </v-btn>
-                <v-btn icon size="x-small" variant="text" @click.stop="moveStep(idx, 1)" :disabled="idx === steps.length - 1">
+                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="moveStep(idx, 1)" :disabled="idx === steps.length - 1">
                   <v-icon size="16">mdi-arrow-right</v-icon>
                 </v-btn>
-                <v-btn icon size="x-small" variant="text" @click.stop="confirmRemoveStep(idx)">
+                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="confirmRemoveStep(idx)">
                   <v-icon size="16">mdi-close</v-icon>
                 </v-btn>
               </div>
@@ -204,13 +204,13 @@
           :style="{ left: contextMenu.clientX + 'px', top: contextMenu.clientY + 'px' }"
           role="menu"
         >
-          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('action'))">Add Action</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('MAP'))">Add Map</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('FILTER'))">Add Filter</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('LOOP'))">Add Loop</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(() => addStepFromContext('IF'))">Add If</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('action')">Add Action</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('MAP')">Add Map</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('FILTER')">Add Filter</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('LOOP')">Add Loop</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('IF')">Add If</div>
           <div class="blueprint-context-menu-divider"></div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="closeMenuAndRun(addTriggerFromContext)">Add Trigger</div>
+          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('trigger')">Add Trigger</div>
         </div>
       </template>
     </Teleport>
@@ -488,11 +488,17 @@ function onConnectionMouseMove(event: MouseEvent) {
 function onConnectionMouseUp(event: MouseEvent) {
   if (!connectionDrag.value) return;
   const el = document.elementFromPoint(event.clientX, event.clientY);
-  const stepKey = el?.closest?.('[data-port="in"]')?.getAttribute('data-step-key');
-  if (stepKey && stepKey !== connectionDrag.value.from.stepKey) {
+  const fromStepKey = connectionDrag.value.from.stepKey;
+  let stepKey = el?.closest?.('[data-port="in"]')?.getAttribute('data-step-key');
+  if (!stepKey) stepKey = el?.closest?.('[data-step-key]')?.getAttribute('data-step-key');
+  if (stepKey && stepKey !== fromStepKey) {
     const step = steps.value.find(s => s.stepKey === stepKey);
     if (step && hasInputPort(step)) {
-      (step as MapStepDef | FilterStepDef | LoopStepDef | IfStepDef).sourceStepKey = connectionDrag.value.from.stepKey;
+      const newSourceKey = connectionDrag.value.from.stepKey;
+      steps.value = steps.value.map((s) => {
+        if (s.stepKey !== stepKey) return s;
+        return { ...s, sourceStepKey: newSourceKey } as StepDef;
+      });
       dirty.value = true;
     }
   }
@@ -503,6 +509,7 @@ function onConnectionMouseUp(event: MouseEvent) {
 
 function onNodeMouseDown(step: StepDef, event: MouseEvent) {
   if (!blueprintCanvas.value) return;
+  if ((event.target as HTMLElement).closest?.('button')) return;
   event.preventDefault();
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
@@ -521,12 +528,12 @@ function onWindowMouseMove(event: MouseEvent) {
   const laneTop = canvasRect.top + 24;
   const x = Math.round(event.clientX - laneLeft + scrollLeft - dragOffset.value.x);
   const y = Math.round(event.clientY - laneTop + scrollTop - dragOffset.value.y);
-  const step = steps.value.find(s => s.stepKey === draggingStepKey.value);
-  if (step) {
-    (step as { x?: number; y?: number }).x = x;
-    (step as { x?: number; y?: number }).y = y;
-    dirty.value = true;
-  }
+  const key = draggingStepKey.value;
+  steps.value = steps.value.map((s) => {
+    if (s.stepKey !== key) return s;
+    return { ...s, x, y } as StepDef;
+  });
+  dirty.value = true;
 }
 
 function onWindowMouseUp() {
@@ -595,9 +602,17 @@ function onNodeContextMenu(step: StepDef, idx: number, event: MouseEvent) {
 
 const contextMenu = ref<{ open: boolean; clientX: number; clientY: number; nodeIdx?: number }>({ open: false, clientX: 0, clientY: 0 });
 
-function closeMenuAndRun(fn: () => void) {
+function onContextMenuAction(action: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF' | 'trigger') {
+  const clientX = contextMenu.value.clientX;
+  const clientY = contextMenu.value.clientY;
   contextMenu.value.open = false;
-  fn();
+  nextTick(() => {
+    if (action === 'trigger') {
+      addTriggerFromContextAt(clientX, clientY);
+    } else {
+      addStepFromContextAt(action, clientX, clientY);
+    }
+  });
 }
 
 function onCanvasContextMenu(event: MouseEvent) {
@@ -610,14 +625,17 @@ function onCanvasContextMenu(event: MouseEvent) {
   };
 }
 
-function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
-  const rect = blueprintCanvas.value?.getBoundingClientRect();
-  const canvasX = rect ? contextMenu.value.clientX - rect.left : steps.value.length * (NODE_WIDTH + 24);
-  const canvasY = rect ? contextMenu.value.clientY - rect.top : 40;
+function addStepFromContextAt(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF', clientX: number, clientY: number) {
+  if (!blueprintCanvas.value) return;
+  const rect = blueprintCanvas.value.getBoundingClientRect();
+  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
+  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const laneLeft = rect.left + 24;
+  const laneTop = rect.top + 24;
+  const canvasX = Math.round(clientX - laneLeft + scrollLeft);
+  const canvasY = Math.round(clientY - laneTop + scrollTop);
   pendingPosition.value = { x: canvasX, y: canvasY };
   newStepType.value = type;
-  contextMenu.value.open = false;
-  // Defaults so we can add without inspector
   if (type === 'action') {
     newStepActionId.value = allActionsFlat.value[0]?.id ?? null;
     newStepConnectionId.value = null;
@@ -635,12 +653,21 @@ function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
   addStep();
 }
 
-function addTriggerFromContext() {
-  const rect = blueprintCanvas.value?.getBoundingClientRect();
-  pendingTriggerPosition.value = rect
-    ? { x: contextMenu.value.clientX - rect.left, y: contextMenu.value.clientY - rect.top }
-    : { x: 20, y: 40 + triggers.value.length * (NODE_HEIGHT + 16) };
-  contextMenu.value.open = false;
+function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
+  addStepFromContextAt(type, contextMenu.value.clientX, contextMenu.value.clientY);
+}
+
+function addTriggerFromContextAt(clientX: number, clientY: number) {
+  if (!blueprintCanvas.value) return;
+  const rect = blueprintCanvas.value.getBoundingClientRect();
+  const scrollLeft = blueprintCanvas.value.scrollLeft ?? 0;
+  const scrollTop = blueprintCanvas.value.scrollTop ?? 0;
+  const laneLeft = rect.left + 24;
+  const laneTop = rect.top + 24;
+  pendingTriggerPosition.value = {
+    x: Math.round(clientX - laneLeft + scrollLeft),
+    y: Math.round(clientY - laneTop + scrollTop),
+  };
   openTriggerDialog();
 }
 
@@ -694,7 +721,10 @@ function addStep() {
   const stepKey = `step_${Date.now()}`;
   const pos = pendingPosition.value ?? { x: steps.value.length * 260, y: 40 };
   if (newStepType.value === 'action') {
-    if (!newStepActionId.value) return;
+    if (!newStepActionId.value) {
+      error.value = 'Add at least one app and action in Apps first, then add an Action step.';
+      return;
+    }
     steps.value.push({
       stepKey,
       actionId: newStepActionId.value,
