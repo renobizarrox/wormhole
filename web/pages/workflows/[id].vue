@@ -658,6 +658,24 @@ function onConnectionMouseUp(event: MouseEvent) {
       }
       dirty.value = true;
     }
+  } else {
+    // Dropped on empty space or same node: treat as "delete connection" from this output
+    if (from.kind === 'step') {
+      const outKey = from.key;
+      steps.value = steps.value.map((s) => {
+        if (!('sourceStepKey' in s)) return s;
+        const any = s as any;
+        const current = any.sourceStepKey as string | undefined;
+        if (current === outKey) {
+          return { ...s, sourceStepKey: undefined } as StepDef;
+        }
+        return s;
+      });
+    } else if (from.kind === 'trigger') {
+      const trigId = from.key;
+      triggerEdges.value = triggerEdges.value.filter(e => e.triggerId !== trigId);
+    }
+    dirty.value = true;
   }
   connectionDrag.value = null;
   window.removeEventListener('mousemove', onConnectionMouseMove);
@@ -1216,6 +1234,7 @@ onMounted(loadAppsAndConnections);
   stroke: #90caf9;
   stroke-width: 2;
   fill: none;
+  pointer-events: stroke;
 }
 
 .connector-line-animated {
