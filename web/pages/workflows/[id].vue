@@ -87,12 +87,6 @@
               <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
                 <span class="blueprint-node-title">{{ nodeType(step) }}</span>
                 <v-spacer />
-                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="moveStep(idx, -1)" :disabled="idx === 0">
-                  <v-icon size="16">mdi-arrow-left</v-icon>
-                </v-btn>
-                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="moveStep(idx, 1)" :disabled="idx === steps.length - 1">
-                  <v-icon size="16">mdi-arrow-right</v-icon>
-                </v-btn>
                 <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="confirmRemoveStep(idx)">
                   <v-icon size="16">mdi-close</v-icon>
                 </v-btn>
@@ -154,7 +148,6 @@
                 :d="connectorPath(seg)"
                 class="connector-line connector-line-animated"
                 marker-end="url(#arrowhead)"
-                @contextmenu.prevent="onConnectionContextMenu(seg, $event)"
               />
             </g>
             <path
@@ -561,17 +554,6 @@ function connectorPath(seg: ConnectorSegment): string {
   return `M ${seg.x1} ${seg.y1} C ${cx1} ${seg.y1}, ${cx2} ${seg.y2}, ${seg.x2} ${seg.y2}`;
 }
 
-function onConnectionContextMenu(seg: ConnectorSegment, event: MouseEvent) {
-  event.preventDefault();
-  contextMenu.value = {
-    open: true,
-    clientX: event.clientX,
-    clientY: event.clientY,
-    nodeIdx: undefined,
-    connection: { kind: seg.kind, fromKey: seg.fromKey, toKey: seg.toKey },
-  };
-}
-
 function removeConnectionFromContext() {
   const conn = contextMenu.value.connection;
   contextMenu.value.open = false;
@@ -797,6 +779,24 @@ const contextMenu = ref<{
   connection: null,
 });
 
+function distanceToSegment(px: number, py: number, seg: ConnectorSegment): number {
+  const { x1, y1, x2, y2 } = seg;
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (dx === 0 && dy === 0) {
+    const ddx = px - x1;
+    const ddy = py - y1;
+    return Math.sqrt(ddx * ddx + ddy * ddy);
+  }
+  const t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy);
+  const clamped = Math.max(0, Math.min(1, t));
+  const cx = x1 + clamped * dx;
+  const cy = y1 + clamped * dy;
+  const ddx = px - cx;
+  const ddy = py - cy;
+  return Math.sqrt(ddx * ddx + ddy * ddy);
+}
+
 function onContextMenuAction(action: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF' | 'trigger') {
   const clientX = contextMenu.value.clientX;
   const clientY = contextMenu.value.clientY;
@@ -813,12 +813,29 @@ function onContextMenuAction(action: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF'
 function onCanvasContextMenu(event: MouseEvent) {
   selectedStepKey.value = null;
   selectedTriggerId.value = null;
+  // Hit-test connections near the cursor so we can offer "Remove connection"
+  let connection: { kind: 'step' | 'trigger'; fromKey: string; toKey: string } | null = null;
+  const el = getCanvasElement();
+  if (el) {
+    const { left, top } = laneOffset();
+    const x = event.clientX - left;
+    const y = event.clientY - top;
+    let bestDist = Infinity;
+    const threshold = 10; // px
+    for (const seg of connectorSegments.value) {
+      const d = distanceToSegment(x, y, seg);
+      if (d < threshold && d < bestDist) {
+        bestDist = d;
+        connection = { kind: seg.kind, fromKey: seg.fromKey, toKey: seg.toKey };
+      }
+    }
+  }
   contextMenu.value = {
     open: true,
     clientX: event.clientX,
     clientY: event.clientY,
     nodeIdx: undefined,
-    connection: null,
+    connection,
   };
 }
 
@@ -1227,15 +1244,14 @@ onMounted(loadAppsAndConnections);
   top: 24px;
   width: calc(100% - 48px);
   height: calc(100% - 48px);
-  /* Allow pointer events only on painted strokes of child paths */
-  pointer-events: visiblePainted;
+  /* Let pointer events pass through to nodes; we hit-test lines manually */
+  pointer-events: none;
 }
 
 .connector-line {
   stroke: #90caf9;
   stroke-width: 2;
   fill: none;
-  pointer-events: stroke;
 }
 
 .connector-line-animated {
@@ -1341,8 +1357,8 @@ onMounted(loadAppsAndConnections);
 }
 
 .port {
-  width: 6px;
-  height: 6px;
+  width: 4px;
+  height: 4px;
   padding: 0;
   margin: 0;
   border-radius: 50%;
@@ -1359,11 +1375,11 @@ onMounted(loadAppsAndConnections);
 }
 
 .port-in {
-  margin-left: -6px;
+  margin-left: -4px;
 }
 
 .port-out {
-  margin-right: -6px;
+  margin-right: -4px;
 }
 
 .port-out-then {
