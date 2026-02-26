@@ -1227,7 +1227,8 @@ onMounted(loadAppsAndConnections);
   top: 24px;
   width: calc(100% - 48px);
   height: calc(100% - 48px);
-  pointer-events: none;
+  /* Allow pointer events only on painted strokes of child paths */
+  pointer-events: visiblePainted;
 }
 
 .connector-line {
@@ -1311,7 +1312,8 @@ onMounted(loadAppsAndConnections);
 
 .blueprint-node-ports {
   position: absolute;
-  top: 10px;
+  top: 0;
+  bottom: 0;
   left: 0;
   right: 0;
   display: flex;
@@ -1325,6 +1327,7 @@ onMounted(loadAppsAndConnections);
   display: flex;
   align-items: center;
   gap: 4px;
+  height: 100%;
 }
 
 .blueprint-node-ports-right {
@@ -1334,13 +1337,14 @@ onMounted(loadAppsAndConnections);
 .blueprint-node-ports-right-if {
   flex-direction: column;
   align-items: flex-end;
+  justify-content: space-between;
 }
 
 .port {
-  width: 8px;
-  height: 8px;
-  padding: 6px;
-  margin: -6px;
+  width: 6px;
+  height: 6px;
+  padding: 0;
+  margin: 0;
   border-radius: 50%;
   border: 2px solid #90caf9;
   background: #0b1020;
