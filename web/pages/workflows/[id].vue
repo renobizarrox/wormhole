@@ -28,255 +28,159 @@
 
     <v-alert v-if="error" type="error" dismissible @click="error = ''">{{ error }}</v-alert>
 
-    <v-row>
-      <v-col cols="12" md="8">
-        <v-card class="mb-4">
-          <v-card-title>Blueprint</v-card-title>
-          <v-card-text>
-            <v-sheet
-              ref="blueprintCanvas"
-              class="blueprint-canvas"
-              rounded
-              @contextmenu.prevent="onCanvasContextMenu"
+    <v-card class="mb-4">
+      <v-card-title class="d-flex align-center">
+        Blueprint
+        <v-spacer />
+        <v-btn color="primary" size="small" :loading="saving" :disabled="!dirty" @click="saveVersion">
+          Save draft
+        </v-btn>
+      </v-card-title>
+      <v-card-text>
+        <v-sheet
+          ref="blueprintCanvas"
+          class="blueprint-canvas"
+          rounded
+          @contextmenu.prevent="onCanvasContextMenu"
+        >
+          <div ref="blueprintLane" class="blueprint-lane">
+            <!-- Trigger nodes -->
+            <div
+              v-for="t in triggers"
+              :key="t.id"
+              class="blueprint-node blueprint-node-trigger"
+              :class="{ 'blueprint-node-selected': selectedTriggerId === t.id }"
+              :style="triggerNodeStyle(t)"
+              @mousedown.stop="onTriggerNodeMouseDown(t, $event)"
+              @click.stop="selectTrigger(t.id)"
             >
-              <div class="blueprint-lane">
-                <div
-                  v-for="(step, idx) in steps"
-                  :key="step.stepKey"
-                  class="blueprint-node"
-                  :style="nodeStyle(step, idx)"
-                  @mousedown.stop="onNodeMouseDown(step, $event)"
-                >
-                  <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
-                    <span class="blueprint-node-title">{{ nodeType(step) }}</span>
-                    <v-spacer />
-                    <v-btn icon size="x-small" variant="text" @click="moveStep(idx, -1)" :disabled="idx === 0">
-                      <v-icon size="16">mdi-arrow-left</v-icon>
-                    </v-btn>
-                    <v-btn icon size="x-small" variant="text" @click="moveStep(idx, 1)" :disabled="idx === steps.length - 1">
-                      <v-icon size="16">mdi-arrow-right</v-icon>
-                    </v-btn>
-                    <v-btn icon size="x-small" variant="text" @click="removeStep(idx)">
-                      <v-icon size="16">mdi-close</v-icon>
-                    </v-btn>
-                  </div>
-                  <div class="blueprint-node-body">
-                    <div class="blueprint-node-ports">
-                      <div class="port port-in"></div>
-                      <div class="port port-out"></div>
-                    </div>
-                    <p class="blueprint-node-label">{{ stepLabel(step) }}</p>
-                    <p class="blueprint-node-meta">Key: {{ step.stepKey }}</p>
-                  </div>
-                </div>
-                <div v-if="steps.length === 0" class="blueprint-empty-hint">
-                  Click Add step on the right to start your blueprint.
-                </div>
+              <div class="blueprint-node-header" style="background-color: #7e57c2;">
+                <span class="blueprint-node-title">Trigger</span>
+                <v-spacer />
+                <v-btn icon size="x-small" variant="text" @click.stop="editTrigger(t)">
+                  <v-icon size="14">mdi-pencil</v-icon>
+                </v-btn>
+                <v-btn icon size="x-small" variant="text" @click.stop="confirmDeleteTrigger(t)">
+                  <v-icon size="14">mdi-close</v-icon>
+                </v-btn>
               </div>
-            </v-sheet>
-            <v-menu
-              v-model="contextMenu.open"
-              :location="{ x: contextMenu.x, y: contextMenu.y }"
-              absolute
+              <div class="blueprint-node-body">
+                <div class="blueprint-node-ports">
+                  <div class="port port-out" data-port="out" :data-trigger-id="t.id" @mousedown.stop="onTriggerPortMouseDown(t, $event)"></div>
+                </div>
+                <p class="blueprint-node-label">{{ t.name }}</p>
+                <p class="blueprint-node-meta">{{ t.type }}</p>
+              </div>
+            </div>
+            <!-- Step nodes -->
+            <div
+              v-for="(step, idx) in steps"
+              :key="step.stepKey"
+              class="blueprint-node"
+              :class="{ 'blueprint-node-selected': selectedStepKey === step.stepKey }"
+              :style="nodeStyle(step, idx)"
+              :data-step-key="step.stepKey"
+              @mousedown.stop="onNodeMouseDown(step, $event)"
+              @click.stop="selectStep(step.stepKey)"
+              @contextmenu.prevent="onNodeContextMenu(step, idx, $event)"
             >
-              <v-list density="compact">
-                <v-list-item @click="addStepFromContext('action')">
-                  <v-list-item-title>Add Action</v-list-item-title>
-                </v-list-item>
-                <v-list-item @click="addStepFromContext('MAP')">
-                  <v-list-item-title>Add Map</v-list-item-title>
-                </v-list-item>
-                <v-list-item @click="addStepFromContext('FILTER')">
-                  <v-list-item-title>Add Filter</v-list-item-title>
-                </v-list-item>
-                <v-list-item @click="addStepFromContext('LOOP')">
-                  <v-list-item-title>Add Loop</v-list-item-title>
-                </v-list-item>
-                <v-list-item @click="addStepFromContext('IF')">
-                  <v-list-item-title>Add If</v-list-item-title>
-                </v-list-item>
-              </v-list>
-            </v-menu>
-          </v-card-text>
-        </v-card>
-      </v-col>
-      <v-col cols="12" md="4">
-        <v-card class="mb-4">
-          <v-card-title>Step Inspector</v-card-title>
-          <v-card-text>
-            <v-select
-              v-model="newStepType"
-              label="Step type"
-              :items="[{ title: 'Action (API call)', value: 'action' }, { title: 'Map', value: 'MAP' }, { title: 'Filter', value: 'FILTER' }, { title: 'Loop', value: 'LOOP' }, { title: 'If', value: 'IF' }]"
-              class="mb-2"
+              <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
+                <span class="blueprint-node-title">{{ nodeType(step) }}</span>
+                <v-spacer />
+                <v-btn icon size="x-small" variant="text" @click.stop="moveStep(idx, -1)" :disabled="idx === 0">
+                  <v-icon size="16">mdi-arrow-left</v-icon>
+                </v-btn>
+                <v-btn icon size="x-small" variant="text" @click.stop="moveStep(idx, 1)" :disabled="idx === steps.length - 1">
+                  <v-icon size="16">mdi-arrow-right</v-icon>
+                </v-btn>
+                <v-btn icon size="x-small" variant="text" @click.stop="confirmRemoveStep(idx)">
+                  <v-icon size="16">mdi-close</v-icon>
+                </v-btn>
+              </div>
+              <div class="blueprint-node-body">
+                <div class="blueprint-node-ports">
+                  <div
+                    v-if="hasInputPort(step)"
+                    class="port port-in"
+                    data-port="in"
+                    :data-step-key="step.stepKey"
+                  ></div>
+                  <div
+                    class="port port-out"
+                    data-port="out"
+                    :data-step-key="step.stepKey"
+                    @mousedown.stop="onPortMouseDown(step, $event)"
+                  ></div>
+                </div>
+                <p class="blueprint-node-label">{{ stepLabel(step) }}</p>
+                <p class="blueprint-node-meta">Key: {{ step.stepKey }}</p>
+              </div>
+            </div>
+            <div v-if="steps.length === 0 && triggers.length === 0" class="blueprint-empty-hint">
+              Right-click on the canvas to add a trigger or step.
+            </div>
+          </div>
+          <!-- Connector lines SVG -->
+          <svg class="blueprint-connectors" aria-hidden="true">
+            <defs>
+              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
+                <polygon points="0 0, 8 3, 0 6" fill="#90caf9" />
+              </marker>
+            </defs>
+            <g v-for="step in steps" :key="'line-' + step.stepKey">
+              <line
+                v-if="'sourceStepKey' in step && step.sourceStepKey"
+                :x1="connectorLine(step).x1"
+                :y1="connectorLine(step).y1"
+                :x2="connectorLine(step).x2"
+                :y2="connectorLine(step).y2"
+                class="connector-line"
+                marker-end="url(#arrowhead)"
+              />
+            </g>
+            <line
+              v-if="connectionDrag"
+              :x1="connectionDrag.from.x"
+              :y1="connectionDrag.from.y"
+              :x2="connectionDrag.x2"
+              :y2="connectionDrag.y2"
+              class="connector-line connector-line-dragging"
+              stroke-dasharray="4 4"
             />
-            <template v-if="newStepType === 'action'">
-              <v-select
-                v-model="newStepActionId"
-                label="Action"
-                :items="allActionsFlat"
-                item-title="label"
-                item-value="id"
-                clearable
-                class="mb-2"
-              />
-              <v-select
-                v-if="newStepActionId"
-                v-model="newStepConnectionId"
-                label="Connection (optional)"
-                :items="connectionsForSelectedAction"
-                item-title="name"
-                item-value="id"
-                clearable
-              />
-            </template>
-            <template v-else-if="newStepType === 'MAP' || newStepType === 'FILTER'">
-              <v-select
-                v-model="newNativeSourceStepKey"
-                label="Source step"
-                :items="steps.map(s => s.stepKey)"
-                class="mb-2"
-              />
-              <v-textarea
-                v-model="newNativeCode"
-                :label="newStepType === 'MAP' ? 'Code (return array)' : 'Code (return filtered array)'"
-                rows="4"
-                class="mb-2"
-              />
-            </template>
-            <template v-else-if="newStepType === 'LOOP'">
-              <v-select
-                v-model="newLoopSourceStepKey"
-                label="Source step (array)"
-                :items="steps.map(s => s.stepKey)"
-                class="mb-2"
-              />
-              <p class="text-caption text-medium-emphasis mb-1">Body steps (run per item; use $.currentItem in mappings)</p>
-              <v-list density="compact" class="mb-2">
-                <v-list-item v-for="(body, bi) in newLoopBodySteps" :key="bi" class="d-flex align-center">
-                  <v-select
-                    v-model="body.actionId"
-                    :items="allActionsFlat"
-                    item-title="label"
-                    item-value="id"
-                    density="compact"
-                    hide-details
-                    class="flex-grow-1 mr-2"
-                  />
-                  <v-btn icon size="x-small" variant="text" @click="newLoopBodySteps.splice(bi, 1)">
-                    <v-icon>mdi-delete</v-icon>
-                  </v-btn>
-                </v-list-item>
-              </v-list>
-              <v-btn
-                size="small"
-                variant="outlined"
-                @click="newLoopBodySteps.push({ stepKey: `loop_body_${Date.now()}`, actionId: allActionsFlat[0]?.id ?? '' })"
-              >
-                Add body step
-              </v-btn>
-            </template>
-            <template v-else-if="newStepType === 'IF'">
-              <v-select
-                v-model="newIfSourceStepKey"
-                label="Source step"
-                :items="steps.map(s => s.stepKey)"
-                class="mb-2"
-              />
-              <p class="text-caption text-medium-emphasis mb-1">Branches (first matching condition runs its steps)</p>
-              <div v-for="(branch, bi) in newIfBranches" :key="bi" class="mb-2 pa-2 border rounded">
-                <v-text-field
-                  v-model="branch.condition"
-                  label="Condition (JS on input)"
-                  density="compact"
-                  placeholder="input.count > 0"
-                />
-                <v-list density="compact">
-                  <v-list-item v-for="(s, si) in branch.steps" :key="si" class="d-flex align-center">
-                    <v-select
-                      v-model="s.actionId"
-                      :items="allActionsFlat"
-                      item-title="label"
-                      item-value="id"
-                      density="compact"
-                      hide-details
-                      class="flex-grow-1 mr-2"
-                    />
-                    <v-btn icon size="x-small" variant="text" @click="branch.steps.splice(si, 1)">
-                      <v-icon>mdi-delete</v-icon>
-                    </v-btn>
-                  </v-list-item>
-                </v-list>
-                <v-btn
-                  size="x-small"
-                  variant="text"
-                  @click="branch.steps.push({ stepKey: `if_${bi}_${branch.steps.length}`, actionId: allActionsFlat[0]?.id ?? '' })"
-                >
-                  + Step
-                </v-btn>
-                <v-btn size="x-small" variant="text" color="error" @click="newIfBranches.splice(bi, 1)">
-                  Remove branch
-                </v-btn>
-              </div>
-              <v-btn
-                size="small"
-                variant="outlined"
-                class="mr-2"
-                @click="newIfBranches.push({ condition: '', steps: [] })"
-              >
-                + Branch
-              </v-btn>
-              <p class="text-caption mt-2">Else steps (optional)</p>
-              <v-list density="compact">
-                <v-list-item v-for="(s, si) in newIfElseSteps" :key="si" class="d-flex align-center">
-                  <v-select
-                    v-model="s.actionId"
-                    :items="allActionsFlat"
-                    item-title="label"
-                    item-value="id"
-                    density="compact"
-                    hide-details
-                    class="flex-grow-1 mr-2"
-                  />
-                  <v-btn icon size="x-small" variant="text" @click="newIfElseSteps.splice(si, 1)">
-                    <v-icon>mdi-delete</v-icon>
-                  </v-btn>
-                </v-list-item>
-              </v-list>
-              <v-btn
-                size="x-small"
-                variant="text"
-                @click="newIfElseSteps.push({ stepKey: `else_${newIfElseSteps.length}`, actionId: allActionsFlat[0]?.id ?? '' })"
-              >
-                + Else step
-              </v-btn>
-            </template>
-            <v-btn class="mt-2" color="primary" size="small" :disabled="!canAddNewStep" @click="addStep">
-              Add step
-            </v-btn>
-            <v-btn class="mt-2 ml-2" color="secondary" size="small" :loading="saving" :disabled="!dirty" @click="saveVersion">
-              Save draft
-            </v-btn>
-          </v-card-text>
-        </v-card>
-      </v-col>
-      <v-col cols="12" md="5">
-        <v-card class="mb-4">
-          <v-card-title>Triggers</v-card-title>
-          <v-card-text>
-            <v-list v-if="triggers.length">
-              <v-list-item v-for="t in triggers" :key="t.id" class="d-flex align-center">
-                <span class="flex-grow-1">{{ t.name }} ({{ t.type }})</span>
-                <v-btn icon size="small" variant="text" @click="editTrigger(t)">Edit</v-btn>
-                <v-btn icon size="small" variant="text" @click="deleteTrigger(t)">Delete</v-btn>
-              </v-list-item>
-            </v-list>
-            <p v-else class="text-medium-emphasis">No triggers. Add manual, webhook, or cron.</p>
-            <v-btn class="mt-2" size="small" @click="openTriggerDialog()">Add trigger</v-btn>
-          </v-card-text>
-        </v-card>
-      </v-col>
-    </v-row>
+          </svg>
+        </v-sheet>
+        <!-- Context menu (fixed at cursor) -->
+        <div
+          v-if="contextMenu.open"
+          class="blueprint-context-menu"
+          :style="{ left: contextMenu.clientX + 'px', top: contextMenu.clientY + 'px' }"
+        >
+          <div class="blueprint-context-menu-item" @click="addStepFromContext('action')">Add Action</div>
+          <div class="blueprint-context-menu-item" @click="addStepFromContext('MAP')">Add Map</div>
+          <div class="blueprint-context-menu-item" @click="addStepFromContext('FILTER')">Add Filter</div>
+          <div class="blueprint-context-menu-item" @click="addStepFromContext('LOOP')">Add Loop</div>
+          <div class="blueprint-context-menu-item" @click="addStepFromContext('IF')">Add If</div>
+          <div class="blueprint-context-menu-divider"></div>
+          <div class="blueprint-context-menu-item" @click="addTriggerFromContext">Add Trigger</div>
+        </div>
+        <div v-if="contextMenu.open" class="blueprint-context-menu-backdrop" @click="contextMenu.open = false"></div>
+      </v-card-text>
+    </v-card>
+
+    <!-- Delete step confirmation -->
+    <v-dialog v-model="deleteStepDialog" max-width="400" persistent>
+      <v-card>
+        <v-card-title>Delete step?</v-card-title>
+        <v-card-text>
+          This action cannot be undone. The step will be permanently removed from the workflow.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="deleteStepDialog = false">Cancel</v-btn>
+          <v-btn color="error" :loading="false" @click="doRemoveStep">Delete</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
 
     <!-- Trigger dialog -->
     <v-dialog v-model="triggerDialog" max-width="500" persistent>
@@ -365,7 +269,7 @@ function isAppStep(s: StepDef): s is AppStepDef {
 interface WorkflowVersion {
   id: string;
   version: number;
-  graph: { steps?: StepDef[] };
+  graph: { steps?: StepDef[]; triggerPositions?: Record<string, { x: number; y: number }> };
   publishedAt: string | null;
 }
 interface Workflow {
@@ -402,11 +306,16 @@ const workflowId = computed(() => route.params.id as string);
 const workflow = ref<Workflow | null>(null);
 const error = ref('');
 const steps = ref<StepDef[]>([]);
+const triggerPositions = ref<Record<string, { x: number; y: number }>>({});
 const dirty = ref(false);
 const saving = ref(false);
 const publishing = ref(false);
 const running = ref(false);
 const triggers = ref<Trigger[]>([]);
+const selectedStepKey = ref<string | null>(null);
+const selectedTriggerId = ref<string | null>(null);
+const deleteStepDialog = ref(false);
+const deleteStepIdx = ref<number | null>(null);
 const triggerDialog = ref(false);
 const editingTrigger = ref<Trigger | null>(null);
 const triggerForm = ref({
@@ -482,10 +391,8 @@ function nodeColor(step: StepDef): string {
   }
 }
 
-function nodeStyle(step: StepDef, index: number) {
-  const anyStep = step as any;
-  const x = typeof anyStep.x === 'number' ? anyStep.x : index * 260;
-  const y = typeof anyStep.y === 'number' ? anyStep.y : 40;
+function nodeStyle(step: StepDef, index: number): Record<string, string> {
+  const { x, y } = stepPosition(step, index);
   return {
     borderColor: nodeColor(step),
     left: `${x}px`,
@@ -503,9 +410,88 @@ const newIfBranches = ref<{ condition: string; steps: { stepKey: string; actionI
 const newIfElseSteps = ref<{ stepKey: string; actionId: string }[]>([]);
 
 const blueprintCanvas = ref<HTMLElement | null>(null);
+const blueprintLane = ref<HTMLElement | null>(null);
 const draggingStepKey = ref<string | null>(null);
+const draggingTriggerId = ref<string | null>(null);
 const dragOffset = ref({ x: 0, y: 0 });
 const pendingPosition = ref<{ x: number; y: number } | null>(null);
+const pendingTriggerPosition = ref<{ x: number; y: number } | null>(null);
+
+/** Connection drag: from step output to another step input */
+const connectionDrag = ref<{ from: { stepKey: string; x: number; y: number }; x2: number; y2: number } | null>(null);
+
+const NODE_WIDTH = 240;
+const NODE_HEADER_H = 32;
+const NODE_BODY_H = 72;
+const NODE_HEIGHT = NODE_HEADER_H + NODE_BODY_H;
+const PORT_OFFSET_Y = 10 + 36; // body top + half of body
+
+function hasInputPort(step: StepDef): boolean {
+  if (isAppStep(step)) return false;
+  return step.type === 'MAP' || step.type === 'FILTER' || step.type === 'LOOP' || step.type === 'IF';
+}
+
+function stepPosition(step: StepDef, index: number): { x: number; y: number } {
+  const anyStep = step as { x?: number; y?: number };
+  const x = typeof anyStep.x === 'number' ? anyStep.x : index * (NODE_WIDTH + 24);
+  const y = typeof anyStep.y === 'number' ? anyStep.y : 40;
+  return { x, y };
+}
+
+function connectorLine(step: StepDef): { x1: number; y1: number; x2: number; y2: number } {
+  if (!('sourceStepKey' in step) || !step.sourceStepKey) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+  const src = steps.value.find(s => s.stepKey === step.sourceStepKey);
+  const srcIdx = src ? steps.value.indexOf(src) : -1;
+  const dstIdx = steps.value.indexOf(step);
+  const srcPos = src ? stepPosition(src, srcIdx) : { x: 0, y: 0 };
+  const dstPos = stepPosition(step, dstIdx);
+  return {
+    x1: srcPos.x + NODE_WIDTH,
+    y1: srcPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+    x2: dstPos.x,
+    y2: dstPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+  };
+}
+
+function laneOffset() {
+  if (!blueprintCanvas.value) return { left: 0, top: 0 };
+  const r = blueprintCanvas.value.getBoundingClientRect();
+  return { left: r.left + 24, top: r.top + 24 };
+}
+
+function onPortMouseDown(step: StepDef, event: MouseEvent) {
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  const { left: laneLeft, top: laneTop } = laneOffset();
+  const x = rect.left + rect.width / 2 - laneLeft;
+  const y = rect.top + rect.height / 2 - laneTop;
+  connectionDrag.value = { from: { stepKey: step.stepKey, x, y }, x2: x, y2: y };
+  window.addEventListener('mousemove', onConnectionMouseMove);
+  window.addEventListener('mouseup', onConnectionMouseUp);
+}
+
+function onConnectionMouseMove(event: MouseEvent) {
+  if (!connectionDrag.value || !blueprintCanvas.value) return;
+  const { left: laneLeft, top: laneTop } = laneOffset();
+  connectionDrag.value.x2 = event.clientX - laneLeft;
+  connectionDrag.value.y2 = event.clientY - laneTop;
+}
+
+function onConnectionMouseUp(event: MouseEvent) {
+  if (!connectionDrag.value) return;
+  const el = document.elementFromPoint(event.clientX, event.clientY);
+  const stepKey = el?.closest?.('[data-port="in"]')?.getAttribute('data-step-key');
+  if (stepKey && stepKey !== connectionDrag.value.from.stepKey) {
+    const step = steps.value.find(s => s.stepKey === stepKey);
+    if (step && hasInputPort(step)) {
+      (step as MapStepDef | FilterStepDef | LoopStepDef | IfStepDef).sourceStepKey = connectionDrag.value.from.stepKey;
+      dirty.value = true;
+    }
+  }
+  connectionDrag.value = null;
+  window.removeEventListener('mousemove', onConnectionMouseMove);
+  window.removeEventListener('mouseup', onConnectionMouseUp);
+}
 
 function onNodeMouseDown(step: StepDef, event: MouseEvent) {
   if (!blueprintCanvas.value) return;
@@ -524,8 +510,8 @@ function onWindowMouseMove(event: MouseEvent) {
   const y = event.clientY - canvasRect.top - dragOffset.value.y;
   const step = steps.value.find(s => s.stepKey === draggingStepKey.value);
   if (step) {
-    (step as any).x = x;
-    (step as any).y = y;
+    (step as { x?: number; y?: number }).x = x;
+    (step as { x?: number; y?: number }).y = y;
     dirty.value = true;
   }
 }
@@ -536,27 +522,103 @@ function onWindowMouseUp() {
   window.removeEventListener('mouseup', onWindowMouseUp);
 }
 
-const contextMenu = ref<{ open: boolean; x: number; y: number }>({ open: false, x: 0, y: 0 });
+function triggerNodeStyle(t: Trigger): Record<string, string> {
+  const pos = triggerPositions.value[t.id] ?? { x: 20, y: 40 + triggers.value.indexOf(t) * (NODE_HEIGHT + 16) };
+  return {
+    left: `${pos.x}px`,
+    top: `${pos.y}px`,
+    borderColor: '#7e57c2',
+  };
+}
+
+function onTriggerNodeMouseDown(t: Trigger, event: MouseEvent) {
+  if (!blueprintCanvas.value) return;
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  draggingTriggerId.value = t.id;
+  dragOffset.value = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  window.addEventListener('mousemove', onTriggerMouseMove);
+  window.addEventListener('mouseup', onTriggerMouseUp);
+}
+
+function onTriggerMouseMove(event: MouseEvent) {
+  if (!draggingTriggerId.value || !blueprintCanvas.value) return;
+  const canvasRect = blueprintCanvas.value.getBoundingClientRect();
+  const x = event.clientX - canvasRect.left - dragOffset.value.x;
+  const y = event.clientY - canvasRect.top - dragOffset.value.y;
+  triggerPositions.value = { ...triggerPositions.value, [draggingTriggerId.value]: { x, y } };
+  dirty.value = true;
+}
+
+function onTriggerMouseUp() {
+  draggingTriggerId.value = null;
+  window.removeEventListener('mousemove', onTriggerMouseMove);
+  window.removeEventListener('mouseup', onTriggerMouseUp);
+}
+
+function onTriggerPortMouseDown(_t: Trigger, _event: MouseEvent) {
+  // Optional: drag from trigger output to step input (e.g. set first step). Omit for now.
+}
+
+function selectStep(stepKey: string) {
+  selectedStepKey.value = stepKey;
+  selectedTriggerId.value = null;
+}
+
+function selectTrigger(id: string) {
+  selectedTriggerId.value = id;
+  selectedStepKey.value = null;
+}
+
+function onNodeContextMenu(step: StepDef, idx: number, event: MouseEvent) {
+  selectedStepKey.value = step.stepKey;
+  contextMenu.value = { open: true, clientX: event.clientX, clientY: event.clientY, nodeIdx: idx };
+}
+
+const contextMenu = ref<{ open: boolean; clientX: number; clientY: number; nodeIdx?: number }>({ open: false, clientX: 0, clientY: 0 });
 
 function onCanvasContextMenu(event: MouseEvent) {
-  if (!blueprintCanvas.value) return;
-  const rect = blueprintCanvas.value.getBoundingClientRect();
+  selectedStepKey.value = null;
+  selectedTriggerId.value = null;
   contextMenu.value = {
     open: true,
-    x: event.clientX - rect.left,
-    y: event.clientY - rect.top,
+    clientX: event.clientX,
+    clientY: event.clientY,
   };
 }
 
 function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
+  const rect = blueprintCanvas.value?.getBoundingClientRect();
+  const canvasX = rect ? contextMenu.value.clientX - rect.left : steps.value.length * (NODE_WIDTH + 24);
+  const canvasY = rect ? contextMenu.value.clientY - rect.top : 40;
+  pendingPosition.value = { x: canvasX, y: canvasY };
   newStepType.value = type;
-  pendingPosition.value = { x: contextMenu.value.x, y: contextMenu.value.y };
   contextMenu.value.open = false;
-  // Best-effort defaults; user can refine in inspector
-  if (type === 'action' && !newStepActionId.value && allActionsFlat.value.length > 0) {
-    newStepActionId.value = allActionsFlat.value[0].id;
+  // Defaults so we can add without inspector
+  if (type === 'action') {
+    newStepActionId.value = allActionsFlat.value[0]?.id ?? null;
+    newStepConnectionId.value = null;
+  } else if (type === 'MAP' || type === 'FILTER') {
+    newNativeSourceStepKey.value = steps.value[0]?.stepKey ?? '';
+    newNativeCode.value = type === 'MAP' ? 'return input;' : 'return true;';
+  } else if (type === 'LOOP') {
+    newLoopSourceStepKey.value = steps.value[0]?.stepKey ?? '';
+    newLoopBodySteps.value = allActionsFlat.value[0] ? [{ stepKey: `loop_body_0`, actionId: allActionsFlat.value[0].id }] : [];
+  } else if (type === 'IF') {
+    newIfSourceStepKey.value = steps.value[0]?.stepKey ?? '';
+    newIfBranches.value = [{ condition: 'true', steps: allActionsFlat.value[0] ? [{ stepKey: 'if_0', actionId: allActionsFlat.value[0].id }] : [] }];
+    newIfElseSteps.value = [];
   }
   addStep();
+}
+
+function addTriggerFromContext() {
+  const rect = blueprintCanvas.value?.getBoundingClientRect();
+  pendingTriggerPosition.value = rect
+    ? { x: contextMenu.value.clientX - rect.left, y: contextMenu.value.clientY - rect.top }
+    : { x: 20, y: 40 + triggers.value.length * (NODE_HEIGHT + 16) };
+  contextMenu.value.open = false;
+  openTriggerDialog();
 }
 
 const canAddNewStep = computed(() => {
@@ -682,8 +744,17 @@ function addStep() {
   dirty.value = true;
 }
 
-function removeStep(idx: number) {
-  steps.value.splice(idx, 1);
+function confirmRemoveStep(idx: number) {
+  deleteStepIdx.value = idx;
+  deleteStepDialog.value = true;
+}
+
+function doRemoveStep() {
+  if (deleteStepIdx.value === null) return;
+  steps.value.splice(deleteStepIdx.value, 1);
+  if (selectedStepKey.value && steps.value.every(s => s.stepKey !== selectedStepKey.value)) selectedStepKey.value = null;
+  deleteStepIdx.value = null;
+  deleteStepDialog.value = false;
   dirty.value = true;
 }
 
@@ -698,7 +769,9 @@ async function saveVersion() {
   saving.value = true;
   error.value = '';
   try {
-    await api.post(`/workflows/${workflowId.value}/versions`, { graph: { steps: steps.value } });
+    await api.post(`/workflows/${workflowId.value}/versions`, {
+      graph: { steps: steps.value, triggerPositions: triggerPositions.value },
+    });
     await loadWorkflow();
   } catch (e: unknown) {
     if (isApiError(e) && e.data?.message) error.value = e.data.message;
@@ -784,7 +857,7 @@ async function saveTrigger() {
         cronTimezone: triggerForm.value.cronTimezone || undefined,
       });
     } else {
-      await api.post(`/workflows/${workflowId.value}/triggers`, {
+      const created = await api.post<Trigger>(`/workflows/${workflowId.value}/triggers`, {
         key: triggerForm.value.key || `trigger_${Date.now()}`,
         name: triggerForm.value.name,
         type: triggerForm.value.type,
@@ -793,6 +866,11 @@ async function saveTrigger() {
         cronExpression: triggerForm.value.cronExpression || undefined,
         cronTimezone: triggerForm.value.cronTimezone || undefined,
       });
+      if (pendingTriggerPosition.value && created?.id) {
+        triggerPositions.value = { ...triggerPositions.value, [created.id]: pendingTriggerPosition.value };
+        pendingTriggerPosition.value = null;
+        dirty.value = true;
+      }
     }
     triggerDialog.value = false;
     await loadTriggers();
@@ -808,10 +886,19 @@ function editTrigger(t: Trigger) {
   openTriggerDialog(t);
 }
 
+function confirmDeleteTrigger(t: Trigger) {
+  if (!confirm(`Delete trigger "${t.name}"? This action cannot be undone.`)) return;
+  deleteTrigger(t);
+}
+
 async function deleteTrigger(t: Trigger) {
   try {
     await api.del(`/triggers/${t.id}`);
+    const { [t.id]: _, ...rest } = triggerPositions.value;
+    triggerPositions.value = rest;
+    if (selectedTriggerId.value === t.id) selectedTriggerId.value = null;
     await loadTriggers();
+    dirty.value = true;
   } catch (e: unknown) {
     if (isApiError(e) && e.data?.message) error.value = e.data.message;
   }
@@ -819,8 +906,9 @@ async function deleteTrigger(t: Trigger) {
 
 watch(workflowId, () => { loadWorkflow(); loadTriggers(); }, { immediate: true });
 watch(latestVersion, () => {
-  const graph = latestVersion.value?.graph as { steps?: StepDef[] } | undefined;
+  const graph = latestVersion.value?.graph as { steps?: StepDef[]; triggerPositions?: Record<string, { x: number; y: number }> } | undefined;
   steps.value = graph?.steps ?? [];
+  triggerPositions.value = graph?.triggerPositions ?? {};
   dirty.value = false;
 }, { immediate: true });
 onMounted(loadAppsAndConnections);
@@ -828,32 +916,96 @@ onMounted(loadAppsAndConnections);
 
 <style scoped>
 .blueprint-canvas {
+  position: relative;
   background-color: #0b1020;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
   background-size: 20px 20px;
   padding: 24px;
-  overflow-x: auto;
-  min-height: 220px;
+  overflow: auto;
+  min-height: 80vh;
+  width: 100%;
 }
 
 .blueprint-lane {
-  display: flex;
-  flex-direction: row;
-  align-items: flex-start;
-  gap: 24px;
+  position: relative;
+  min-height: 800px;
+  width: 100%;
 }
 
 .blueprint-node {
-  min-width: 220px;
-  max-width: 260px;
+  position: absolute;
+  width: 240px;
+  min-width: 240px;
+  max-width: 240px;
   border-radius: 12px;
   border: 2px solid #42a5f5;
   background: rgba(15, 23, 42, 0.96);
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 10px 22px rgba(0, 0, 0, 0.6);
   color: #e3f2fd;
   overflow: hidden;
+  cursor: grab;
+}
+
+.blueprint-node:active {
+  cursor: grabbing;
+}
+
+.blueprint-node-selected {
+  box-shadow: 0 0 0 2px #90caf9, 0 0 20px rgba(66, 165, 245, 0.4);
+}
+
+.blueprint-connectors {
+  position: absolute;
+  left: 24px;
+  top: 24px;
+  width: calc(100% - 48px);
+  height: calc(100% - 48px);
+  pointer-events: none;
+}
+
+.connector-line {
+  stroke: #90caf9;
+  stroke-width: 2;
+  fill: none;
+}
+
+.connector-line-dragging {
+  stroke: #42a5f5;
+  stroke-width: 2;
+}
+
+.blueprint-context-menu {
+  position: fixed;
+  z-index: 1000;
+  min-width: 160px;
+  padding: 4px 0;
+  background: rgb(var(--v-theme-surface));
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.blueprint-context-menu-item {
+  padding: 8px 16px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.blueprint-context-menu-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.blueprint-context-menu-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.blueprint-context-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
 }
 
 .blueprint-node-header {
@@ -883,23 +1035,31 @@ onMounted(loadAppsAndConnections);
   right: 0;
   display: flex;
   justify-content: space-between;
+  align-items: center;
   pointer-events: none;
 }
 
 .port {
-  width: 10px;
-  height: 10px;
+  width: 12px;
+  height: 12px;
   border-radius: 50%;
   border: 2px solid #90caf9;
   background: #0b1020;
+  pointer-events: auto;
+  cursor: crosshair;
+  flex-shrink: 0;
+}
+
+.blueprint-node-trigger .blueprint-node-ports {
+  justify-content: flex-end;
 }
 
 .port-in {
-  margin-left: -5px;
+  margin-left: -6px;
 }
 
 .port-out {
-  margin-right: -5px;
+  margin-right: -6px;
 }
 
 .blueprint-node-label {

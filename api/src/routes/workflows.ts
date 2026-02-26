@@ -73,6 +73,7 @@ const stepDefSchema: z.ZodType<unknown> = z.lazy(() =>
 
 const graphSchema = z.object({
   steps: z.array(stepDefSchema),
+  triggerPositions: z.record(z.object({ x: z.number(), y: z.number() })).optional(),
 });
 
 const createVersionBody = z.object({
