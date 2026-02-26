@@ -29,30 +29,56 @@
     <v-alert v-if="error" type="error" dismissible @click="error = ''">{{ error }}</v-alert>
 
     <v-row>
-      <v-col cols="12" md="7">
+      <v-col cols="12" md="8">
         <v-card class="mb-4">
-          <v-card-title>Steps</v-card-title>
+          <v-card-title>Blueprint</v-card-title>
           <v-card-text>
-            <v-list>
-              <v-list-item v-for="(step, idx) in steps" :key="idx" class="d-flex align-center">
-                <span class="mr-2">{{ idx + 1 }}.</span>
-                <span class="flex-grow-1">{{ stepLabel(step) }}</span>
-                <v-btn icon size="small" variant="text" @click="moveStep(idx, -1)" :disabled="idx === 0">
-                  <v-icon>mdi-arrow-up</v-icon>
-                </v-btn>
-                <v-btn icon size="small" variant="text" @click="moveStep(idx, 1)" :disabled="idx === steps.length - 1">
-                  <v-icon>mdi-arrow-down</v-icon>
-                </v-btn>
-                <v-btn icon size="small" variant="text" @click="removeStep(idx)">
-                  <v-icon>mdi-delete</v-icon>
-                </v-btn>
-              </v-list-item>
-            </v-list>
-            <v-divider class="my-2" />
+            <v-sheet class="blueprint-canvas" rounded>
+              <div class="blueprint-lane">
+                <div
+                  v-for="(step, idx) in steps"
+                  :key="step.stepKey"
+                  class="blueprint-node"
+                  :style="{ borderColor: nodeColor(step) }"
+                >
+                  <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
+                    <span class="blueprint-node-title">{{ nodeType(step) }}</span>
+                    <v-spacer />
+                    <v-btn icon size="x-small" variant="text" @click="moveStep(idx, -1)" :disabled="idx === 0">
+                      <v-icon size="16">mdi-arrow-left</v-icon>
+                    </v-btn>
+                    <v-btn icon size="x-small" variant="text" @click="moveStep(idx, 1)" :disabled="idx === steps.length - 1">
+                      <v-icon size="16">mdi-arrow-right</v-icon>
+                    </v-btn>
+                    <v-btn icon size="x-small" variant="text" @click="removeStep(idx)">
+                      <v-icon size="16">mdi-close</v-icon>
+                    </v-btn>
+                  </div>
+                  <div class="blueprint-node-body">
+                    <div class="blueprint-node-ports">
+                      <div class="port port-in"></div>
+                      <div class="port port-out"></div>
+                    </div>
+                    <p class="blueprint-node-label">{{ stepLabel(step) }}</p>
+                    <p class="blueprint-node-meta">Key: {{ step.stepKey }}</p>
+                  </div>
+                </div>
+                <div v-if="steps.length === 0" class="blueprint-empty-hint">
+                  Click \"Add step\" on the right to start your blueprint.
+                </div>
+              </div>
+            </v-sheet>
+          </v-card-text>
+        </v-card>
+      </v-col>
+      <v-col cols="12" md="4">
+        <v-card class="mb-4">
+          <v-card-title>Step Inspector</v-card-title>
+          <v-card-text>
             <v-select
               v-model="newStepType"
               label="Step type"
-              :items="[{ title: 'Action (API call)', value: 'action' }, { title: 'Map', value: 'MAP' }, { title: 'Filter', value: 'FILTER' }, { title: 'Loop', value: 'LOOP' }, { title: 'If', value: 'IF' }]"
+              :items=\"[{ title: 'Action (API call)', value: 'action' }, { title: 'Map', value: 'MAP' }, { title: 'Filter', value: 'FILTER' }, { title: 'Loop', value: 'LOOP' }, { title: 'If', value: 'IF' }]\"
               class="mb-2"
             />
             <template v-if="newStepType === 'action'">
@@ -82,7 +108,12 @@
                 :items="steps.map(s => s.stepKey)"
                 class="mb-2"
               />
-              <v-textarea v-model="newNativeCode" :label="newStepType === 'MAP' ? 'Code (return array)' : 'Code (return filtered array)'" rows="3" class="mb-2" />
+              <v-textarea
+                v-model="newNativeCode"
+                :label="newStepType === 'MAP' ? 'Code (return array)' : 'Code (return filtered array)'"
+                rows="4"
+                class="mb-2"
+              />
             </template>
             <template v-else-if="newStepType === 'LOOP'">
               <v-select
@@ -103,10 +134,18 @@
                     hide-details
                     class="flex-grow-1 mr-2"
                   />
-                  <v-btn icon size="x-small" variant="text" @click="newLoopBodySteps.splice(bi, 1)"><v-icon>mdi-delete</v-icon></v-btn>
+                  <v-btn icon size="x-small" variant="text" @click="newLoopBodySteps.splice(bi, 1)">
+                    <v-icon>mdi-delete</v-icon>
+                  </v-btn>
                 </v-list-item>
               </v-list>
-              <v-btn size="small" variant="outlined" @click="newLoopBodySteps.push({ stepKey: `loop_body_${Date.now()}`, actionId: allActionsFlat[0]?.id ?? '' })">Add body step</v-btn>
+              <v-btn
+                size="small"
+                variant="outlined"
+                @click="newLoopBodySteps.push({ stepKey: `loop_body_${Date.now()}`, actionId: allActionsFlat[0]?.id ?? '' })"
+              >
+                Add body step
+              </v-btn>
             </template>
             <template v-else-if="newStepType === 'IF'">
               <v-select
@@ -117,25 +156,71 @@
               />
               <p class="text-caption text-medium-emphasis mb-1">Branches (first matching condition runs its steps)</p>
               <div v-for="(branch, bi) in newIfBranches" :key="bi" class="mb-2 pa-2 border rounded">
-                <v-text-field v-model="branch.condition" label="Condition (JS on input)" density="compact" placeholder="input.count > 0" />
+                <v-text-field
+                  v-model="branch.condition"
+                  label="Condition (JS on input)"
+                  density="compact"
+                  placeholder="input.count > 0"
+                />
                 <v-list density="compact">
                   <v-list-item v-for="(s, si) in branch.steps" :key="si" class="d-flex align-center">
-                    <v-select v-model="s.actionId" :items="allActionsFlat" item-title="label" item-value="id" density="compact" hide-details class="flex-grow-1 mr-2" />
-                    <v-btn icon size="x-small" variant="text" @click="branch.steps.splice(si, 1)"><v-icon>mdi-delete</v-icon></v-btn>
+                    <v-select
+                      v-model="s.actionId"
+                      :items="allActionsFlat"
+                      item-title="label"
+                      item-value="id"
+                      density="compact"
+                      hide-details
+                      class="flex-grow-1 mr-2"
+                    />
+                    <v-btn icon size="x-small" variant="text" @click="branch.steps.splice(si, 1)">
+                      <v-icon>mdi-delete</v-icon>
+                    </v-btn>
                   </v-list-item>
                 </v-list>
-                <v-btn size="x-small" variant="text" @click="branch.steps.push({ stepKey: `if_${bi}_${branch.steps.length}`, actionId: allActionsFlat[0]?.id ?? '' })">+ Step</v-btn>
-                <v-btn size="x-small" variant="text" color="error" @click="newIfBranches.splice(bi, 1)">Remove branch</v-btn>
+                <v-btn
+                  size="x-small"
+                  variant="text"
+                  @click="branch.steps.push({ stepKey: `if_${bi}_${branch.steps.length}`, actionId: allActionsFlat[0]?.id ?? '' })"
+                >
+                  + Step
+                </v-btn>
+                <v-btn size="x-small" variant="text" color="error" @click="newIfBranches.splice(bi, 1)">
+                  Remove branch
+                </v-btn>
               </div>
-              <v-btn size="small" variant="outlined" class="mr-2" @click="newIfBranches.push({ condition: '', steps: [] })">+ Branch</v-btn>
+              <v-btn
+                size="small"
+                variant="outlined"
+                class="mr-2"
+                @click="newIfBranches.push({ condition: '', steps: [] })"
+              >
+                + Branch
+              </v-btn>
               <p class="text-caption mt-2">Else steps (optional)</p>
               <v-list density="compact">
                 <v-list-item v-for="(s, si) in newIfElseSteps" :key="si" class="d-flex align-center">
-                  <v-select v-model="s.actionId" :items="allActionsFlat" item-title="label" item-value="id" density="compact" hide-details class="flex-grow-1 mr-2" />
-                  <v-btn icon size="x-small" variant="text" @click="newIfElseSteps.splice(si, 1)"><v-icon>mdi-delete</v-icon></v-btn>
+                  <v-select
+                    v-model="s.actionId"
+                    :items="allActionsFlat"
+                    item-title="label"
+                    item-value="id"
+                    density="compact"
+                    hide-details
+                    class="flex-grow-1 mr-2"
+                  />
+                  <v-btn icon size="x-small" variant="text" @click="newIfElseSteps.splice(si, 1)">
+                    <v-icon>mdi-delete</v-icon>
+                  </v-btn>
                 </v-list-item>
               </v-list>
-              <v-btn size="x-small" variant="text" @click="newIfElseSteps.push({ stepKey: `else_${newIfElseSteps.length}`, actionId: allActionsFlat[0]?.id ?? '' })">+ Else step</v-btn>
+              <v-btn
+                size="x-small"
+                variant="text"
+                @click="newIfElseSteps.push({ stepKey: `else_${newIfElseSteps.length}`, actionId: allActionsFlat[0]?.id ?? '' })"
+              >
+                + Else step
+              </v-btn>
             </template>
             <v-btn class="mt-2" color="primary" size="small" :disabled="!canAddNewStep" @click="addStep">
               Add step
@@ -339,6 +424,22 @@ function stepLabel(step: StepDef): string {
     case 'LOOP': return `Loop (from ${step.sourceStepKey}, ${step.bodySteps?.length ?? 0} body steps)`;
     case 'IF': return `If (from ${step.sourceStepKey})`;
     default: return (step as { stepKey: string }).stepKey;
+  }
+}
+
+function nodeType(step: StepDef): string {
+  if (isAppStep(step)) return 'Action';
+  return step.type;
+}
+
+function nodeColor(step: StepDef): string {
+  if (isAppStep(step)) return '#4CAF50'; // green for actions
+  switch (step.type) {
+    case 'MAP': return '#42A5F5'; // blue
+    case 'FILTER': return '#AB47BC'; // purple
+    case 'LOOP': return '#FFB300'; // amber
+    case 'IF': return '#EF5350'; // red
+    default: return '#607D8B'; // grey-blue
   }
 }
 
@@ -605,3 +706,96 @@ watch(latestVersion, () => {
 }, { immediate: true });
 onMounted(loadAppsAndConnections);
 </script>
+
+<style scoped>
+.blueprint-canvas {
+  background-color: #0b1020;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 20px 20px;
+  padding: 24px;
+  overflow-x: auto;
+  min-height: 220px;
+}
+
+.blueprint-lane {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 24px;
+}
+
+.blueprint-node {
+  min-width: 220px;
+  max-width: 260px;
+  border-radius: 12px;
+  border: 2px solid #42a5f5;
+  background: rgba(15, 23, 42, 0.96);
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 10px 22px rgba(0, 0, 0, 0.6);
+  color: #e3f2fd;
+  overflow: hidden;
+}
+
+.blueprint-node-header {
+  display: flex;
+  align-items: center;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #0b1020;
+}
+
+.blueprint-node-title {
+  white-space: nowrap;
+}
+
+.blueprint-node-body {
+  padding: 10px 12px 12px;
+  position: relative;
+}
+
+.blueprint-node-ports {
+  position: absolute;
+  top: 10px;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
+}
+
+.port {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 2px solid #90caf9;
+  background: #0b1020;
+}
+
+.port-in {
+  margin-left: -5px;
+}
+
+.port-out {
+  margin-right: -5px;
+}
+
+.blueprint-node-label {
+  font-size: 13px;
+  margin: 14px 0 4px;
+}
+
+.blueprint-node-meta {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.blueprint-empty-hint {
+  color: #90caf9;
+  font-size: 13px;
+  opacity: 0.8;
+}
+</style>
