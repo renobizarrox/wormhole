@@ -145,8 +145,9 @@
             <g v-for="(seg, i) in connectorSegments" :key="'seg-' + i">
               <path
                 :d="connectorPath(seg)"
-                class="connector-line"
+                class="connector-line connector-line-animated"
                 marker-end="url(#arrowhead)"
+                @contextmenu.prevent="onConnectionContextMenu(seg, $event)"
               />
             </g>
             <path
@@ -212,13 +213,18 @@
           :style="{ left: contextMenu.clientX + 'px', top: contextMenu.clientY + 'px' }"
           role="menu"
         >
-          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('action')">Add Action</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('MAP')">Add Map</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('FILTER')">Add Filter</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('LOOP')">Add Loop</div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('IF')">Add If</div>
-          <div class="blueprint-context-menu-divider"></div>
-          <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('trigger')">Add Trigger</div>
+          <template v-if="!contextMenu.connection">
+            <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('action')">Add Action</div>
+            <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('MAP')">Add Map</div>
+            <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('FILTER')">Add Filter</div>
+            <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('LOOP')">Add Loop</div>
+            <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('IF')">Add If</div>
+            <div class="blueprint-context-menu-divider"></div>
+            <div class="blueprint-context-menu-item" role="menuitem" @click="onContextMenuAction('trigger')">Add Trigger</div>
+          </template>
+          <template v-else>
+            <div class="blueprint-context-menu-item" role="menuitem" @click="removeConnectionFromContext">Remove connection</div>
+          </template>
         </div>
       </template>
     </Teleport>
@@ -482,10 +488,15 @@ interface ConnectorSegment {
   y1: number;
   x2: number;
   y2: number;
+  kind: 'step' | 'trigger';
+  fromKey: string;
+  toKey: string;
 }
 
 function connectorLine(step: StepDef): ConnectorSegment {
-  if (!('sourceStepKey' in step) || !step.sourceStepKey) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+  if (!('sourceStepKey' in step) || !step.sourceStepKey) {
+    return { x1: 0, y1: 0, x2: 0, y2: 0, kind: 'step', fromKey: '', toKey: '' };
+  }
   const src = steps.value.find(s => s.stepKey === step.sourceStepKey);
   const srcIdx = src ? steps.value.indexOf(src) : -1;
   const dstIdx = steps.value.indexOf(step);
@@ -496,18 +507,21 @@ function connectorLine(step: StepDef): ConnectorSegment {
     y1: srcPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
     x2: dstPos.x,
     y2: dstPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+    kind: 'step',
+    fromKey: step.sourceStepKey,
+    toKey: (step as any).stepKey,
   };
 }
 
 function triggerConnectorLine(edge: TriggerEdge): ConnectorSegment {
   const trig = triggers.value.find(t => t.id === edge.triggerId);
-  if (!trig) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+  if (!trig) return { x1: 0, y1: 0, x2: 0, y2: 0, kind: 'trigger', fromKey: '', toKey: '' };
   const pos = triggerPositions.value[edge.triggerId] ?? {
     x: 20,
     y: 40 + triggers.value.indexOf(trig) * (NODE_HEIGHT + 16),
   };
   const dst = steps.value.find(s => s.stepKey === edge.stepKey);
-  if (!dst) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+  if (!dst) return { x1: 0, y1: 0, x2: 0, y2: 0, kind: 'trigger', fromKey: '', toKey: '' };
   const dstIdx = steps.value.indexOf(dst);
   const dstPos = stepPosition(dst, dstIdx);
   return {
@@ -515,6 +529,9 @@ function triggerConnectorLine(edge: TriggerEdge): ConnectorSegment {
     y1: pos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
     x2: dstPos.x,
     y2: dstPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+    kind: 'trigger',
+    fromKey: edge.triggerId,
+    toKey: edge.stepKey,
   };
 }
 
@@ -535,6 +552,42 @@ function connectorPath(seg: ConnectorSegment): string {
   const cx1 = seg.x1 + dx;
   const cx2 = seg.x2 - dx;
   return `M ${seg.x1} ${seg.y1} C ${cx1} ${seg.y1}, ${cx2} ${seg.y2}, ${seg.x2} ${seg.y2}`;
+}
+
+function onConnectionContextMenu(seg: ConnectorSegment, event: MouseEvent) {
+  event.preventDefault();
+  contextMenu.value = {
+    open: true,
+    clientX: event.clientX,
+    clientY: event.clientY,
+    nodeIdx: undefined,
+    connection: { kind: seg.kind, fromKey: seg.fromKey, toKey: seg.toKey },
+  };
+}
+
+function removeConnectionFromContext() {
+  const conn = contextMenu.value.connection;
+  contextMenu.value.open = false;
+  if (!conn) return;
+  if (conn.kind === 'step') {
+    const fromKey = conn.fromKey;
+    const toKey = conn.toKey;
+    steps.value = steps.value.map((s) => {
+      if (!( 'sourceStepKey' in s)) return s;
+      const any = s as any;
+      const current = any.sourceStepKey as string | undefined;
+      if (!current) return s;
+      if (s.stepKey === toKey && current === fromKey) {
+        return { ...s, sourceStepKey: undefined } as StepDef;
+      }
+      return s;
+    });
+  } else {
+    triggerEdges.value = triggerEdges.value.filter(
+      (e) => !(e.triggerId === conn.fromKey && e.stepKey === conn.toKey),
+    );
+  }
+  dirty.value = true;
 }
 
 function laneOffset() {
@@ -693,10 +746,21 @@ function selectTrigger(id: string) {
 
 function onNodeContextMenu(step: StepDef, idx: number, event: MouseEvent) {
   selectedStepKey.value = step.stepKey;
-  contextMenu.value = { open: true, clientX: event.clientX, clientY: event.clientY, nodeIdx: idx };
+  contextMenu.value = { open: true, clientX: event.clientX, clientY: event.clientY, nodeIdx: idx, connection: null };
 }
 
-const contextMenu = ref<{ open: boolean; clientX: number; clientY: number; nodeIdx?: number }>({ open: false, clientX: 0, clientY: 0 });
+const contextMenu = ref<{
+  open: boolean;
+  clientX: number;
+  clientY: number;
+  nodeIdx?: number;
+  connection?: { kind: 'step' | 'trigger'; fromKey: string; toKey: string } | null;
+}>({
+  open: false,
+  clientX: 0,
+  clientY: 0,
+  connection: null,
+});
 
 function onContextMenuAction(action: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF' | 'trigger') {
   const clientX = contextMenu.value.clientX;
@@ -718,6 +782,8 @@ function onCanvasContextMenu(event: MouseEvent) {
     open: true,
     clientX: event.clientX,
     clientY: event.clientY,
+    nodeIdx: undefined,
+    connection: null,
   };
 }
 
@@ -1135,9 +1201,23 @@ onMounted(loadAppsAndConnections);
   fill: none;
 }
 
+.connector-line-animated {
+  stroke-dasharray: 8 16;
+  animation: connector-flow 1.2s linear infinite;
+}
+
 .connector-line-dragging {
   stroke: #42a5f5;
   stroke-width: 2;
+}
+
+@keyframes connector-flow {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -24;
+  }
 }
 
 .blueprint-context-menu {
@@ -1205,8 +1285,8 @@ onMounted(loadAppsAndConnections);
 }
 
 .port {
-  width: 12px;
-  height: 12px;
+  width: 8px;
+  height: 8px;
   padding: 10px;
   margin: -10px;
   border-radius: 50%;
@@ -1234,6 +1314,16 @@ onMounted(loadAppsAndConnections);
 
 .port-out {
   margin-right: -6px;
+}
+
+.port-out-then {
+  border-color: #66bb6a;
+  background: #1b5e20;
+}
+
+.port-out-else {
+  border-color: #ef5350;
+  background: #7f0000;
 }
 
 .blueprint-node-label {
