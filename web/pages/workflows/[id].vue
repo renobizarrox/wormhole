@@ -77,7 +77,7 @@
               v-for="(step, idx) in steps"
               :key="step.stepKey"
               class="blueprint-node"
-              :class="{ 'blueprint-node-selected': selectedStepKey === step.stepKey }"
+              :class="{ 'blueprint-node-selected': selectedStepKey === step.stepKey, 'blueprint-node-if': isIfStep(step) }"
               :style="nodeStyle(step, idx)"
               :data-step-key="step.stepKey"
               @mousedown.stop="onNodeMouseDown(step, $event)"
@@ -105,7 +105,22 @@
                     data-port="in"
                     :data-step-key="step.stepKey"
                   ></div>
+                  <template v-if="isIfStep(step)">
+                    <div
+                      class="port port-out port-out-then"
+                      data-port="out-then"
+                      :data-step-key="step.stepKey"
+                      @mousedown.stop="onPortMouseDown(step, $event)"
+                    ></div>
+                    <div
+                      class="port port-out port-out-else"
+                      data-port="out-else"
+                      :data-step-key="step.stepKey"
+                      @mousedown.stop="onPortMouseDown(step, $event)"
+                    ></div>
+                  </template>
                   <div
+                    v-else
                     class="port port-out"
                     data-port="out"
                     :data-step-key="step.stepKey"
@@ -127,23 +142,16 @@
                 <polygon points="0 0, 8 3, 0 6" fill="#90caf9" />
               </marker>
             </defs>
-            <g v-for="step in steps" :key="'line-' + step.stepKey">
-              <line
-                v-if="'sourceStepKey' in step && step.sourceStepKey"
-                :x1="connectorLine(step).x1"
-                :y1="connectorLine(step).y1"
-                :x2="connectorLine(step).x2"
-                :y2="connectorLine(step).y2"
+            <g v-for="(seg, i) in connectorSegments" :key="'seg-' + i">
+              <path
+                :d="connectorPath(seg)"
                 class="connector-line"
                 marker-end="url(#arrowhead)"
               />
             </g>
-            <line
+            <path
               v-if="connectionDrag"
-              :x1="connectionDrag.from.x"
-              :y1="connectionDrag.from.y"
-              :x2="connectionDrag.x2"
-              :y2="connectionDrag.y2"
+              :d="connectorPath({ x1: connectionDrag.from.x, y1: connectionDrag.from.y, x2: connectionDrag.x2, y2: connectionDrag.y2 })"
               class="connector-line connector-line-dragging"
               stroke-dasharray="4 4"
             />
@@ -274,10 +282,22 @@ type StepDef = AppStepDef | MapStepDef | FilterStepDef | LoopStepDef | IfStepDef
 function isAppStep(s: StepDef): s is AppStepDef {
   return 'actionId' in s && typeof (s as AppStepDef).actionId === 'string';
 }
+function isIfStep(s: StepDef): s is IfStepDef {
+  return !isAppStep(s) && (s as IfStepDef).type === 'IF';
+}
+
+interface TriggerEdge {
+  triggerId: string;
+  stepKey: string;
+}
 interface WorkflowVersion {
   id: string;
   version: number;
-  graph: { steps?: StepDef[]; triggerPositions?: Record<string, { x: number; y: number }> };
+  graph: {
+    steps?: StepDef[];
+    triggerPositions?: Record<string, { x: number; y: number }>;
+    triggerEdges?: TriggerEdge[];
+  };
   publishedAt: string | null;
 }
 interface Workflow {
@@ -315,6 +335,7 @@ const workflow = ref<Workflow | null>(null);
 const error = ref('');
 const steps = ref<StepDef[]>([]);
 const triggerPositions = ref<Record<string, { x: number; y: number }>>({});
+const triggerEdges = ref<TriggerEdge[]>([]);
 const dirty = ref(false);
 const saving = ref(false);
 const publishing = ref(false);
@@ -425,8 +446,12 @@ const dragOffset = ref({ x: 0, y: 0 });
 const pendingPosition = ref<{ x: number; y: number } | null>(null);
 const pendingTriggerPosition = ref<{ x: number; y: number } | null>(null);
 
-/** Connection drag: from step output to another step input */
-const connectionDrag = ref<{ from: { stepKey: string; x: number; y: number }; x2: number; y2: number } | null>(null);
+/** Connection drag: from step or trigger output to a step input */
+const connectionDrag = ref<{
+  from: { kind: 'step' | 'trigger'; key: string; x: number; y: number };
+  x2: number;
+  y2: number;
+} | null>(null);
 
 function getCanvasElement(): HTMLElement | null {
   const raw = blueprintCanvas.value as any;
@@ -452,7 +477,14 @@ function stepPosition(step: StepDef, index: number): { x: number; y: number } {
   return { x, y };
 }
 
-function connectorLine(step: StepDef): { x1: number; y1: number; x2: number; y2: number } {
+interface ConnectorSegment {
+  x1: number;
+  y1: number;
+  x2: number;
+  y2: number;
+}
+
+function connectorLine(step: StepDef): ConnectorSegment {
   if (!('sourceStepKey' in step) || !step.sourceStepKey) return { x1: 0, y1: 0, x2: 0, y2: 0 };
   const src = steps.value.find(s => s.stepKey === step.sourceStepKey);
   const srcIdx = src ? steps.value.indexOf(src) : -1;
@@ -465,6 +497,44 @@ function connectorLine(step: StepDef): { x1: number; y1: number; x2: number; y2:
     x2: dstPos.x,
     y2: dstPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
   };
+}
+
+function triggerConnectorLine(edge: TriggerEdge): ConnectorSegment {
+  const trig = triggers.value.find(t => t.id === edge.triggerId);
+  if (!trig) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+  const pos = triggerPositions.value[edge.triggerId] ?? {
+    x: 20,
+    y: 40 + triggers.value.indexOf(trig) * (NODE_HEIGHT + 16),
+  };
+  const dst = steps.value.find(s => s.stepKey === edge.stepKey);
+  if (!dst) return { x1: 0, y1: 0, x2: 0, y2: 0 };
+  const dstIdx = steps.value.indexOf(dst);
+  const dstPos = stepPosition(dst, dstIdx);
+  return {
+    x1: pos.x + NODE_WIDTH,
+    y1: pos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+    x2: dstPos.x,
+    y2: dstPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+  };
+}
+
+const connectorSegments = computed<ConnectorSegment[]>(() => {
+  const segs: ConnectorSegment[] = [];
+  for (const step of steps.value) {
+    if (!('sourceStepKey' in step) || !step.sourceStepKey) continue;
+    segs.push(connectorLine(step));
+  }
+  for (const edge of triggerEdges.value) {
+    segs.push(triggerConnectorLine(edge));
+  }
+  return segs;
+});
+
+function connectorPath(seg: ConnectorSegment): string {
+  const dx = Math.max(40, Math.abs(seg.x2 - seg.x1) / 2);
+  const cx1 = seg.x1 + dx;
+  const cx2 = seg.x2 - dx;
+  return `M ${seg.x1} ${seg.y1} C ${cx1} ${seg.y1}, ${cx2} ${seg.y2}, ${seg.x2} ${seg.y2}`;
 }
 
 function laneOffset() {
@@ -480,7 +550,7 @@ function onPortMouseDown(step: StepDef, event: MouseEvent) {
   const { left: laneLeft, top: laneTop } = laneOffset();
   const x = rect.left + rect.width / 2 - laneLeft;
   const y = rect.top + rect.height / 2 - laneTop;
-  connectionDrag.value = { from: { stepKey: step.stepKey, x, y }, x2: x, y2: y };
+  connectionDrag.value = { from: { kind: 'step', key: step.stepKey, x, y }, x2: x, y2: y };
   window.addEventListener('mousemove', onConnectionMouseMove);
   window.addEventListener('mouseup', onConnectionMouseUp);
 }
@@ -496,17 +566,26 @@ function onConnectionMouseMove(event: MouseEvent) {
 function onConnectionMouseUp(event: MouseEvent) {
   if (!connectionDrag.value) return;
   const el = document.elementFromPoint(event.clientX, event.clientY);
-  const fromStepKey = connectionDrag.value.from.stepKey;
+  const from = connectionDrag.value.from;
+  const fromKey = from.key;
   let stepKey = el?.closest?.('[data-port="in"]')?.getAttribute('data-step-key');
   if (!stepKey) stepKey = el?.closest?.('[data-step-key]')?.getAttribute('data-step-key');
-  if (stepKey && stepKey !== fromStepKey) {
+  if (stepKey && stepKey !== fromKey) {
     const step = steps.value.find(s => s.stepKey === stepKey);
     if (step && hasInputPort(step)) {
-      const newSourceKey = connectionDrag.value.from.stepKey;
-      steps.value = steps.value.map((s) => {
-        if (s.stepKey !== stepKey) return s;
-        return { ...s, sourceStepKey: newSourceKey } as StepDef;
-      });
+      if (from.kind === 'step') {
+        const newSourceKey = from.key;
+        steps.value = steps.value.map((s) => {
+          if (s.stepKey !== stepKey) return s;
+          return { ...s, sourceStepKey: newSourceKey } as StepDef;
+        });
+      } else if (from.kind === 'trigger') {
+        const trigId = from.key;
+        triggerEdges.value = [
+          ...triggerEdges.value.filter(e => !(e.triggerId === trigId && e.stepKey === stepKey)),
+          { triggerId: trigId, stepKey },
+        ];
+      }
       dirty.value = true;
     }
   }
@@ -591,8 +670,15 @@ function onTriggerMouseUp() {
   window.removeEventListener('mouseup', onTriggerMouseUp);
 }
 
-function onTriggerPortMouseDown(_t: Trigger, _event: MouseEvent) {
-  // Optional: drag from trigger output to step input (e.g. set first step). Omit for now.
+function onTriggerPortMouseDown(t: Trigger, event: MouseEvent) {
+  const target = event.currentTarget as HTMLElement;
+  const rect = target.getBoundingClientRect();
+  const { left: laneLeft, top: laneTop } = laneOffset();
+  const x = rect.left + rect.width / 2 - laneLeft;
+  const y = rect.top + rect.height / 2 - laneTop;
+  connectionDrag.value = { from: { kind: 'trigger', key: t.id, x, y }, x2: x, y2: y };
+  window.addEventListener('mousemove', onConnectionMouseMove);
+  window.addEventListener('mouseup', onConnectionMouseUp);
 }
 
 function selectStep(stepKey: string) {
@@ -816,7 +902,11 @@ function confirmRemoveStep(idx: number) {
 
 function doRemoveStep() {
   if (deleteStepIdx.value === null) return;
+  const removed = steps.value[deleteStepIdx.value];
   steps.value.splice(deleteStepIdx.value, 1);
+  if (removed) {
+    triggerEdges.value = triggerEdges.value.filter(e => e.stepKey !== (removed as any).stepKey);
+  }
   if (selectedStepKey.value && steps.value.every(s => s.stepKey !== selectedStepKey.value)) selectedStepKey.value = null;
   deleteStepIdx.value = null;
   deleteStepDialog.value = false;
@@ -835,7 +925,11 @@ async function saveVersion() {
   error.value = '';
   try {
     await api.post(`/workflows/${workflowId.value}/versions`, {
-      graph: { steps: steps.value, triggerPositions: triggerPositions.value },
+      graph: {
+        steps: steps.value,
+        triggerPositions: triggerPositions.value,
+        triggerEdges: triggerEdges.value,
+      },
     });
     await loadWorkflow();
   } catch (e: unknown) {
@@ -971,9 +1065,14 @@ async function deleteTrigger(t: Trigger) {
 
 watch(workflowId, () => { loadWorkflow(); loadTriggers(); }, { immediate: true });
 watch(latestVersion, () => {
-  const graph = latestVersion.value?.graph as { steps?: StepDef[]; triggerPositions?: Record<string, { x: number; y: number }> } | undefined;
+  const graph = latestVersion.value?.graph as {
+    steps?: StepDef[];
+    triggerPositions?: Record<string, { x: number; y: number }>;
+    triggerEdges?: TriggerEdge[];
+  } | undefined;
   steps.value = graph?.steps ?? [];
   triggerPositions.value = graph?.triggerPositions ?? {};
+  triggerEdges.value = graph?.triggerEdges ?? [];
   dirty.value = false;
 }, { immediate: true });
 onMounted(loadAppsAndConnections);
@@ -1121,6 +1220,12 @@ onMounted(loadAppsAndConnections);
 
 .blueprint-node-trigger .blueprint-node-ports {
   justify-content: flex-end;
+}
+
+.blueprint-node-if .blueprint-node-ports {
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
 }
 
 .port-in {
