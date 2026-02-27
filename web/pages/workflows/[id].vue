@@ -1,6 +1,6 @@
 <template>
-  <v-container>
-    <div class="d-flex align-center gap-2 mb-4">
+  <v-container class="workflow-page" fluid fill-height>
+    <div class="d-flex align-center gap-2 mb-2 flex-shrink-0">
       <v-btn icon variant="text" :to="'/workflows'">
         <v-icon>mdi-arrow-left</v-icon>
       </v-btn>
@@ -26,24 +26,41 @@
       </v-btn>
     </div>
 
-    <v-alert v-if="error" type="error" dismissible @click="error = ''">{{ error }}</v-alert>
+    <v-alert v-if="error" type="error" dismissible class="flex-shrink-0" @click="error = ''">{{ error }}</v-alert>
 
-    <v-card class="mb-4">
-      <v-card-title class="d-flex align-center">
+    <v-card class="workflow-blueprint-card">
+      <v-card-title class="d-flex align-center flex-shrink-0">
         Blueprint
         <v-spacer />
         <v-btn color="primary" size="small" :loading="saving" :disabled="!dirty" @click="saveVersion">
           Save draft
         </v-btn>
       </v-card-title>
-      <v-card-text>
+      <v-card-text class="workflow-blueprint-card-text">
         <v-sheet
           ref="blueprintCanvas"
           class="blueprint-canvas"
           rounded
+          :class="{ 'blueprint-canvas-panning': isPanning }"
           @contextmenu.prevent="onCanvasContextMenu"
+          @wheel.prevent="onCanvasWheel"
+          @mousedown="onCanvasMouseDown"
         >
-          <div ref="blueprintLane" class="blueprint-lane">
+          <div
+            ref="blueprintCanvasInner"
+            class="blueprint-canvas-camera"
+            :style="{
+              width: canvasContentSize.width + 'px',
+              height: canvasContentSize.height + 'px',
+              transform: `translate(${canvasPan.x}px, ${canvasPan.y}px) scale(${canvasZoom})`,
+              transformOrigin: '0 0',
+            }"
+          >
+            <div
+              ref="blueprintLane"
+              class="blueprint-lane"
+              :style="{ width: canvasContentSize.width + 'px', height: canvasContentSize.height + 'px' }"
+            >
             <!-- Trigger nodes -->
             <div
               v-for="t in triggers"
@@ -54,8 +71,22 @@
               @mousedown.stop="onTriggerNodeMouseDown(t, $event)"
               @click.stop="selectTrigger(t.id)"
             >
-              <div class="blueprint-node-header" style="background-color: #7e57c2;">
-                <span class="blueprint-node-title">Trigger</span>
+              <div class="blueprint-node-header" style="background-color: #876b98;">
+                <div class="blueprint-node-header-text" @mousedown.stop>
+                  <input
+                    v-if="editingTriggerId === t.id"
+                    v-model="editingNameValue"
+                    class="blueprint-node-title-input"
+                    @blur="saveEditingTriggerName"
+                    @keydown.enter="saveEditingTriggerName"
+                  />
+                  <span
+                    v-else
+                    class="blueprint-node-title blueprint-node-label-editable"
+                    @click="startEditingTriggerName(t)"
+                  >{{ t.name }}</span>
+                  <span class="blueprint-node-type-label">Trigger</span>
+                </div>
                 <v-spacer />
                 <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="editTrigger(t)">
                   <v-icon size="14">mdi-pencil</v-icon>
@@ -66,10 +97,25 @@
               </div>
               <div class="blueprint-node-body">
                 <div class="blueprint-node-ports">
-                  <div class="port port-out" data-port="out" :data-trigger-id="t.id" @mousedown.stop="onTriggerPortMouseDown(t, $event)"></div>
+                  <div class="blueprint-node-ports-left"></div>
+                  <div class="blueprint-node-ports-right">
+                    <div
+                      class="port port-out"
+                      data-port="out"
+                      :data-trigger-id="t.id"
+                      @mousedown.stop="onTriggerPortMouseDown(t, $event)"
+                    ></div>
+                  </div>
                 </div>
-                <p class="blueprint-node-label">{{ t.name }}</p>
-                <p class="blueprint-node-meta">{{ t.type }}</p>
+                <div class="blueprint-block-info">
+                  <div class="blueprint-block-info-line">{{ t.type }}</div>
+                  <template v-if="t.type === 'WEBHOOK' && t.webhookPath">
+                    <div class="blueprint-block-info-line blueprint-block-info-muted">/{{ t.webhookPath }}</div>
+                  </template>
+                  <template v-else-if="t.type === 'CRON' && t.cronExpression">
+                    <div class="blueprint-block-info-line blueprint-block-info-muted">{{ t.cronExpression }}</div>
+                  </template>
+                </div>
               </div>
             </div>
             <!-- Step nodes -->
@@ -85,7 +131,21 @@
               @contextmenu.prevent="onNodeContextMenu(step, idx, $event)"
             >
               <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
-                <span class="blueprint-node-title">{{ nodeType(step) }}</span>
+                <div class="blueprint-node-header-text" @mousedown.stop>
+                  <input
+                    v-if="editingStepKey === step.stepKey"
+                    v-model="editingNameValue"
+                    class="blueprint-node-title-input"
+                    @blur="saveEditingStepName"
+                    @keydown.enter="saveEditingStepName"
+                  />
+                  <span
+                    v-else
+                    class="blueprint-node-title blueprint-node-label-editable"
+                    @click="startEditingStepName(step)"
+                  >{{ stepDisplayName(step) }}</span>
+                  <span class="blueprint-node-type-label">{{ nodeType(step) }}</span>
+                </div>
                 <v-spacer />
                 <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="confirmRemoveStep(idx)">
                   <v-icon size="16">mdi-close</v-icon>
@@ -128,19 +188,59 @@
                     ></div>
                   </div>
                 </div>
-                <p class="blueprint-node-label">{{ stepLabel(step) }}</p>
-                <p class="blueprint-node-meta">Key: {{ step.stepKey }}</p>
+                <!-- Action: app/action + connection -->
+                <div v-if="isAppStep(step)" class="blueprint-block-info">
+                  <div class="blueprint-block-info-line">{{ stepActionName(step.actionId) }}</div>
+                  <div v-if="step.connectionId" class="blueprint-block-info-line blueprint-block-info-muted">
+                    Connection: {{ connectionName(step.connectionId) }}
+                  </div>
+                  <div v-else-if="step.inputMapping && Object.keys(step.inputMapping).length" class="blueprint-block-info-line blueprint-block-info-muted">
+                    {{ Object.keys(step.inputMapping).length }} input(s) mapped
+                  </div>
+                </div>
+                <!-- MAP: source + code preview -->
+                <div v-else-if="step.type === 'MAP'" class="blueprint-block-info">
+                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
+                  <div class="blueprint-block-info-line blueprint-block-info-code" :title="step.code">{{ codePreview(step.code) }}</div>
+                </div>
+                <!-- FILTER: source + condition preview -->
+                <div v-else-if="step.type === 'FILTER'" class="blueprint-block-info">
+                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
+                  <div class="blueprint-block-info-line blueprint-block-info-code" :title="step.code">{{ codePreview(step.code) }}</div>
+                </div>
+                <!-- LOOP: source + body count -->
+                <div v-else-if="step.type === 'LOOP'" class="blueprint-block-info">
+                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
+                  <div class="blueprint-block-info-line blueprint-block-info-muted">{{ step.bodySteps?.length ?? 0 }} step(s) in loop</div>
+                </div>
+                <!-- IF: source + branches/else -->
+                <div v-else-if="step.type === 'IF'" class="blueprint-block-info">
+                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
+                  <template v-for="(br, i) in step.branches" :key="i">
+                    <div class="blueprint-block-info-line blueprint-block-info-code" :title="br.condition">
+                      when {{ codePreview(br.condition, 28) }} → {{ br.steps?.length ?? 0 }} step(s)
+                    </div>
+                  </template>
+                  <div v-if="step.elseSteps?.length" class="blueprint-block-info-line blueprint-block-info-muted">
+                    else → {{ step.elseSteps.length }} step(s)
+                  </div>
+                </div>
               </div>
             </div>
             <div v-if="steps.length === 0 && triggers.length === 0" class="blueprint-empty-hint">
               Right-click on the canvas to add a trigger or step.
             </div>
-          </div>
-          <!-- Connector lines SVG -->
-          <svg class="blueprint-connectors" aria-hidden="true">
+              </div>
+              <!-- Connector lines SVG -->
+              <svg
+                class="blueprint-connectors"
+                aria-hidden="true"
+                :width="canvasContentSize.width"
+                :height="canvasContentSize.height"
+              >
             <defs>
-              <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto">
-                <polygon points="0 0, 8 3, 0 6" fill="#90caf9" />
+              <marker id="arrowhead" markerWidth="13" markerHeight="6" refX="8" refY="3" orient="auto">
+                <polygon points="0 0, 10 3, 0 6" fill="#7da3c4" />
               </marker>
             </defs>
             <g v-for="(seg, i) in connectorSegments" :key="'seg-' + i">
@@ -157,6 +257,17 @@
               stroke-dasharray="4 4"
             />
           </svg>
+          </div>
+          <div class="blueprint-zoom-controls" @mousedown.stop>
+            <v-btn icon size="small" variant="tonal" @click="setZoom(canvasZoom - 0.25)" :disabled="canvasZoom <= 0.25">
+              <v-icon>mdi-minus</v-icon>
+            </v-btn>
+            <span class="blueprint-zoom-label">{{ Math.round(canvasZoom * 100) }}%</span>
+            <v-btn icon size="small" variant="tonal" @click="setZoom(canvasZoom + 0.25)" :disabled="canvasZoom >= 2">
+              <v-icon>mdi-plus</v-icon>
+            </v-btn>
+            <v-btn size="x-small" variant="text" @click="setZoom(1)">100%</v-btn>
+          </div>
         </v-sheet>
       </v-card-text>
     </v-card>
@@ -243,6 +354,7 @@ interface AppStepDef {
   actionId: string;
   connectionId?: string;
   inputMapping?: Record<string, unknown>;
+  name?: string;
   x?: number;
   y?: number;
 }
@@ -252,6 +364,7 @@ interface MapStepDef {
   type: 'MAP';
   sourceStepKey: string;
   code: string;
+  name?: string;
   x?: number;
   y?: number;
 }
@@ -261,6 +374,7 @@ interface FilterStepDef {
   type: 'FILTER';
   sourceStepKey: string;
   code: string;
+  name?: string;
   x?: number;
   y?: number;
 }
@@ -270,6 +384,7 @@ interface LoopStepDef {
   type: 'LOOP';
   sourceStepKey: string;
   bodySteps: AppStepDef[];
+  name?: string;
   x?: number;
   y?: number;
 }
@@ -280,6 +395,7 @@ interface IfStepDef {
   sourceStepKey: string;
   branches: { condition: string; steps: AppStepDef[] }[];
   elseSteps?: AppStepDef[];
+  name?: string;
   x?: number;
   y?: number;
 }
@@ -410,19 +526,41 @@ function stepLabel(step: StepDef): string {
   }
 }
 
+/** Display name: user-edited name or fallback label */
+function stepDisplayName(step: StepDef): string {
+  const n = (step as { name?: string }).name;
+  return (n != null && n.trim() !== '') ? n.trim() : stepLabel(step);
+}
+
+function stepDisplayNameByKey(stepKey: string): string {
+  const step = steps.value.find(s => s.stepKey === stepKey);
+  return step ? stepDisplayName(step) : stepKey;
+}
+
+function connectionName(connectionId: string): string {
+  const c = connections.value.find(x => x.id === connectionId);
+  return c?.name ?? connectionId;
+}
+
+/** One-line preview of code (expression/code block) */
+function codePreview(code: string, maxLen = 40): string {
+  const one = code.replace(/\s+/g, ' ').trim();
+  return one.length <= maxLen ? one : one.slice(0, maxLen) + '…';
+}
+
 function nodeType(step: StepDef): string {
   if (isAppStep(step)) return 'Action';
   return step.type;
 }
 
 function nodeColor(step: StepDef): string {
-  if (isAppStep(step)) return '#4CAF50'; // green for actions
+  if (isAppStep(step)) return '#5d9e5d'; // soft green for actions
   switch (step.type) {
-    case 'MAP': return '#42A5F5'; // blue
-    case 'FILTER': return '#AB47BC'; // purple
-    case 'LOOP': return '#FFB300'; // amber
-    case 'IF': return '#EF5350'; // red
-    default: return '#607D8B'; // grey-blue
+    case 'MAP': return '#6b92b5'; // soft blue
+    case 'FILTER': return '#9570a0'; // soft purple
+    case 'LOOP': return '#c9a855'; // soft amber
+    case 'IF': return '#b86d6a'; // soft red
+    default: return '#6d88a5'; // soft grey-blue
   }
 }
 
@@ -449,6 +587,9 @@ const blueprintLane = ref<HTMLElement | null>(null);
 const draggingStepKey = ref<string | null>(null);
 const draggingTriggerId = ref<string | null>(null);
 const dragOffset = ref({ x: 0, y: 0 });
+const editingStepKey = ref<string | null>(null);
+const editingTriggerId = ref<string | null>(null);
+const editingNameValue = ref('');
 const pendingPosition = ref<{ x: number; y: number } | null>(null);
 const pendingTriggerPosition = ref<{ x: number; y: number } | null>(null);
 
@@ -469,10 +610,103 @@ const NODE_WIDTH = 240;
 const NODE_HEADER_H = 32;
 const NODE_BODY_H = 72;
 const NODE_HEIGHT = NODE_HEADER_H + NODE_BODY_H;
-const PORT_OFFSET_Y = 10 + 36; // body top + half of body
+/** Port vertical center: empirically aligned so connector lines hit the dot centers (header 32px + body offset to port center) */
+const PORT_CENTER_Y = NODE_HEADER_H + 55;
+/** Input port: body padding-left 12px + node border 2px = 14px to content; port margin-left -8, total port width 14px → center at 14 - 8 + 7 = 13 from node left */
+const PORT_INPUT_X_OFFSET = 1;
+/** Output port: from node right edge, port center is at -(12 + 2 - 8 + 7) = -13 (body pad + border - margin + half port) */
+//const PORT_OUTPUT_X_OFFSET = -13;
+const PORT_OUTPUT_X_OFFSET = 5;
+const CANVAS_PADDING = 400;
+const MIN_CANVAS_WIDTH = 2000;
+const MIN_CANVAS_HEIGHT = 1500;
+
+const canvasZoom = ref(1);
+const canvasPan = ref({ x: 0, y: 0 });
+const blueprintCanvasInner = ref<HTMLElement | null>(null);
+const CANVAS_PADDING_VIEW = 24;
+
+const isPanning = ref(false);
+const panStart = ref({ clientX: 0, clientY: 0, panX: 0, panY: 0 });
+
+function setZoom(z: number) {
+  canvasZoom.value = Math.max(0.25, Math.min(2, Math.round(z * 100) / 100));
+}
+
+function onCanvasWheel(event: WheelEvent) {
+  event.preventDefault();
+  const container = getCanvasElement();
+  if (!container) return;
+  const r = container.getBoundingClientRect();
+  const originLeft = r.left + CANVAS_PADDING_VIEW;
+  const originTop = r.top + CANVAS_PADDING_VIEW;
+  const laneX = (event.clientX - originLeft - canvasPan.value.x) / canvasZoom.value;
+  const laneY = (event.clientY - originTop - canvasPan.value.y) / canvasZoom.value;
+  const delta = event.deltaY > 0 ? -0.08 : 0.08;
+  const newZoom = Math.max(0.25, Math.min(2, canvasZoom.value + delta));
+  canvasZoom.value = newZoom;
+  canvasPan.value = {
+    x: event.clientX - originLeft - laneX * newZoom,
+    y: event.clientY - originTop - laneY * newZoom,
+  };
+}
+
+function onCanvasMouseDown(event: MouseEvent) {
+  if ((event.target as Element).closest('.blueprint-node')) return;
+  if ((event.target as Element).closest('.blueprint-zoom-controls')) return;
+  event.preventDefault();
+  isPanning.value = true;
+  panStart.value = {
+    clientX: event.clientX,
+    clientY: event.clientY,
+    panX: canvasPan.value.x,
+    panY: canvasPan.value.y,
+  };
+  window.addEventListener('mousemove', onCanvasPanMove);
+  window.addEventListener('mouseup', onCanvasPanUp);
+}
+
+function onCanvasPanMove(event: MouseEvent) {
+  if (!isPanning.value) return;
+  canvasPan.value = {
+    x: panStart.value.panX + (event.clientX - panStart.value.clientX),
+    y: panStart.value.panY + (event.clientY - panStart.value.clientY),
+  };
+}
+
+function onCanvasPanUp() {
+  isPanning.value = false;
+  window.removeEventListener('mousemove', onCanvasPanMove);
+  window.removeEventListener('mouseup', onCanvasPanUp);
+}
+
+const canvasContentSize = computed(() => {
+  let minX = 0;
+  let minY = 0;
+  let maxX = MIN_CANVAS_WIDTH;
+  let maxY = MIN_CANVAS_HEIGHT;
+  for (const t of triggers.value) {
+    const pos = triggerPositions.value[t.id] ?? { x: 20, y: 40 + triggers.value.indexOf(t) * (NODE_HEIGHT + 16) };
+    minX = Math.min(minX, pos.x);
+    minY = Math.min(minY, pos.y);
+    maxX = Math.max(maxX, pos.x + NODE_WIDTH);
+    maxY = Math.max(maxY, pos.y + NODE_HEIGHT);
+  }
+  steps.value.forEach((step, idx) => {
+    const pos = stepPosition(step, idx);
+    minX = Math.min(minX, pos.x);
+    minY = Math.min(minY, pos.y);
+    maxX = Math.max(maxX, pos.x + NODE_WIDTH);
+    maxY = Math.max(maxY, pos.y + NODE_HEIGHT);
+  });
+  return {
+    width: Math.max(MIN_CANVAS_WIDTH, maxX + CANVAS_PADDING),
+    height: Math.max(MIN_CANVAS_HEIGHT, maxY + CANVAS_PADDING),
+  };
+});
 
 function hasInputPort(step: StepDef): boolean {
-  if (isAppStep(step)) return false;
+  if (isAppStep(step)) return true;
   return step.type === 'MAP' || step.type === 'FILTER' || step.type === 'LOOP' || step.type === 'IF';
 }
 
@@ -488,25 +722,34 @@ interface ConnectorSegment {
   y1: number;
   x2: number;
   y2: number;
+  /** Actual y of the destination input dot (for dynamic arrow refY) */
+  inputPortY: number;
   kind: 'step' | 'trigger';
   fromKey: string;
   toKey: string;
 }
 
+/** Input port center Y offset from node top; use same as LOOP for all blocks so alignment is consistent */
+function getInputPortCenterY(_step: StepDef): number {
+  return PORT_CENTER_Y;
+}
+
 function connectorLine(step: StepDef): ConnectorSegment {
   if (!('sourceStepKey' in step) || !step.sourceStepKey) {
-    return { x1: 0, y1: 0, x2: 0, y2: 0, kind: 'step', fromKey: '', toKey: '' };
+    return { x1: 0, y1: 0, x2: 0, y2: 0, inputPortY: 0, kind: 'step', fromKey: '', toKey: '' };
   }
   const src = steps.value.find(s => s.stepKey === step.sourceStepKey);
   const srcIdx = src ? steps.value.indexOf(src) : -1;
   const dstIdx = steps.value.indexOf(step);
   const srcPos = src ? stepPosition(src, srcIdx) : { x: 0, y: 0 };
   const dstPos = stepPosition(step, dstIdx);
+  const inputPortY = dstPos.y + getInputPortCenterY(step);
   return {
-    x1: srcPos.x + NODE_WIDTH,
-    y1: srcPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
-    x2: dstPos.x,
-    y2: dstPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+    x1: srcPos.x + NODE_WIDTH + PORT_OUTPUT_X_OFFSET,
+    y1: srcPos.y + PORT_CENTER_Y,
+    x2: dstPos.x + PORT_INPUT_X_OFFSET,
+    y2: dstPos.y + PORT_CENTER_Y,
+    inputPortY,
     kind: 'step',
     fromKey: step.sourceStepKey,
     toKey: (step as any).stepKey,
@@ -515,20 +758,22 @@ function connectorLine(step: StepDef): ConnectorSegment {
 
 function triggerConnectorLine(edge: TriggerEdge): ConnectorSegment {
   const trig = triggers.value.find(t => t.id === edge.triggerId);
-  if (!trig) return { x1: 0, y1: 0, x2: 0, y2: 0, kind: 'trigger', fromKey: '', toKey: '' };
+  if (!trig) return { x1: 0, y1: 0, x2: 0, y2: 0, inputPortY: 0, kind: 'trigger', fromKey: '', toKey: '' };
   const pos = triggerPositions.value[edge.triggerId] ?? {
     x: 20,
     y: 40 + triggers.value.indexOf(trig) * (NODE_HEIGHT + 16),
   };
   const dst = steps.value.find(s => s.stepKey === edge.stepKey);
-  if (!dst) return { x1: 0, y1: 0, x2: 0, y2: 0, kind: 'trigger', fromKey: '', toKey: '' };
+  if (!dst) return { x1: 0, y1: 0, x2: 0, y2: 0, inputPortY: 0, kind: 'trigger', fromKey: '', toKey: '' };
   const dstIdx = steps.value.indexOf(dst);
   const dstPos = stepPosition(dst, dstIdx);
+  const inputPortY = dstPos.y + getInputPortCenterY(dst);
   return {
-    x1: pos.x + NODE_WIDTH,
-    y1: pos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
-    x2: dstPos.x,
-    y2: dstPos.y + NODE_HEADER_H + PORT_OFFSET_Y - 10,
+    x1: pos.x + NODE_WIDTH + PORT_OUTPUT_X_OFFSET,
+    y1: pos.y + PORT_CENTER_Y,
+    x2: dstPos.x + PORT_INPUT_X_OFFSET,
+    y2: dstPos.y + PORT_CENTER_Y,
+    inputPortY,
     kind: 'trigger',
     fromKey: edge.triggerId,
     toKey: edge.stepKey,
@@ -547,11 +792,16 @@ const connectorSegments = computed<ConnectorSegment[]>(() => {
   return segs;
 });
 
+/** Path stops at node edge; arrow (13px) spans from edge to input dot so the line does not go into the box */
+const ARROW_MARKER_LENGTH = 13;
+
 function connectorPath(seg: ConnectorSegment): string {
   const dx = Math.max(40, Math.abs(seg.x2 - seg.x1) / 2);
   const cx1 = seg.x1 + dx;
-  const cx2 = seg.x2 - dx;
-  return `M ${seg.x1} ${seg.y1} C ${cx1} ${seg.y1}, ${cx2} ${seg.y2}, ${seg.x2} ${seg.y2}`;
+  const endX = seg.x2 - ARROW_MARKER_LENGTH;
+  const endY = seg.inputPortY ?? seg.y2;
+  const cx2 = endX - dx;
+  return `M ${seg.x1} ${seg.y1} C ${cx1} ${seg.y1}, ${cx2} ${endY}, ${endX} ${endY}`;
 }
 
 function removeConnectionFromContext() {
@@ -579,30 +829,40 @@ function removeConnectionFromContext() {
   dirty.value = true;
 }
 
-function laneOffset() {
+function getLaneElement(): HTMLElement | null {
+  return blueprintCanvasInner.value;
+}
+
+function laneOffset(): { left: number; top: number; zoom: number } {
   const el = getCanvasElement();
-  if (!el) return { left: 0, top: 0 };
+  const zoom = canvasZoom.value;
+  const pan = canvasPan.value;
+  if (!el) return { left: 0, top: 0, zoom };
   const r = el.getBoundingClientRect();
-  return { left: r.left + 24, top: r.top + 24 };
+  return {
+    left: r.left + CANVAS_PADDING_VIEW + pan.x,
+    top: r.top + CANVAS_PADDING_VIEW + pan.y,
+    zoom,
+  };
 }
 
 function onPortMouseDown(step: StepDef, event: MouseEvent) {
+  event.preventDefault();
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
-  const { left: laneLeft, top: laneTop } = laneOffset();
-  const x = rect.left + rect.width / 2 - laneLeft;
-  const y = rect.top + rect.height / 2 - laneTop;
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  const x = (rect.left + rect.width / 2 - laneLeft) / zoom;
+  const y = (rect.top + rect.height / 2 - laneTop) / zoom;
   connectionDrag.value = { from: { kind: 'step', key: step.stepKey, x, y }, x2: x, y2: y };
   window.addEventListener('mousemove', onConnectionMouseMove);
   window.addEventListener('mouseup', onConnectionMouseUp);
 }
 
 function onConnectionMouseMove(event: MouseEvent) {
-  const el = getCanvasElement();
-  if (!connectionDrag.value || !el) return;
-  const { left: laneLeft, top: laneTop } = laneOffset();
-  connectionDrag.value.x2 = event.clientX - laneLeft;
-  connectionDrag.value.y2 = event.clientY - laneTop;
+  if (!connectionDrag.value) return;
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  connectionDrag.value.x2 = (event.clientX - laneLeft) / zoom;
+  connectionDrag.value.y2 = (event.clientY - laneTop) / zoom;
 }
 
 function onConnectionMouseUp(event: MouseEvent) {
@@ -665,27 +925,27 @@ function onConnectionMouseUp(event: MouseEvent) {
 }
 
 function onNodeMouseDown(step: StepDef, event: MouseEvent) {
-  if (!getCanvasElement()) return;
+  if (!getLaneElement()) return;
   if ((event.target as HTMLElement).closest?.('button')) return;
   event.preventDefault();
-  const target = event.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
-  draggingStepKey.value = step.stepKey;
-  dragOffset.value = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  const key = step.stepKey;
+  const idx = steps.value.findIndex(s => s.stepKey === key);
+  const nodePos = stepPosition(step, idx >= 0 ? idx : 0);
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  draggingStepKey.value = key;
+  dragOffset.value = {
+    x: (event.clientX - laneLeft) / zoom - nodePos.x,
+    y: (event.clientY - laneTop) / zoom - nodePos.y,
+  };
   window.addEventListener('mousemove', onWindowMouseMove);
   window.addEventListener('mouseup', onWindowMouseUp);
 }
 
 function onWindowMouseMove(event: MouseEvent) {
-  const el = getCanvasElement();
-  if (!draggingStepKey.value || !el) return;
-  const canvasRect = el.getBoundingClientRect();
-  const scrollLeft = el.scrollLeft ?? 0;
-  const scrollTop = el.scrollTop ?? 0;
-  const laneLeft = canvasRect.left + 24;
-  const laneTop = canvasRect.top + 24;
-  const x = Math.round(event.clientX - laneLeft + scrollLeft - dragOffset.value.x);
-  const y = Math.round(event.clientY - laneTop + scrollTop - dragOffset.value.y);
+  if (!draggingStepKey.value) return;
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  const x = Math.round((event.clientX - laneLeft) / zoom - dragOffset.value.x);
+  const y = Math.round((event.clientY - laneTop) / zoom - dragOffset.value.y);
   const key = draggingStepKey.value;
   steps.value = steps.value.map((s) => {
     if (s.stepKey !== key) return s;
@@ -705,31 +965,29 @@ function triggerNodeStyle(t: Trigger): Record<string, string> {
   return {
     left: `${pos.x}px`,
     top: `${pos.y}px`,
-    borderColor: '#7e57c2',
+    borderColor: '#876b98',
   };
 }
 
 function onTriggerNodeMouseDown(t: Trigger, event: MouseEvent) {
-  if (!getCanvasElement()) return;
+  if (!getLaneElement()) return;
   event.preventDefault();
-  const target = event.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
+  const pos = triggerPositions.value[t.id] ?? { x: 20, y: 40 + triggers.value.indexOf(t) * (NODE_HEIGHT + 16) };
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
   draggingTriggerId.value = t.id;
-  dragOffset.value = { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  dragOffset.value = {
+    x: (event.clientX - laneLeft) / zoom - pos.x,
+    y: (event.clientY - laneTop) / zoom - pos.y,
+  };
   window.addEventListener('mousemove', onTriggerMouseMove);
   window.addEventListener('mouseup', onTriggerMouseUp);
 }
 
 function onTriggerMouseMove(event: MouseEvent) {
-  const el = getCanvasElement();
-  if (!draggingTriggerId.value || !el) return;
-  const canvasRect = el.getBoundingClientRect();
-  const scrollLeft = el.scrollLeft ?? 0;
-  const scrollTop = el.scrollTop ?? 0;
-  const laneLeft = canvasRect.left + 24;
-  const laneTop = canvasRect.top + 24;
-  const x = Math.round(event.clientX - laneLeft + scrollLeft - dragOffset.value.x);
-  const y = Math.round(event.clientY - laneTop + scrollTop - dragOffset.value.y);
+  if (!draggingTriggerId.value) return;
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  const x = Math.round((event.clientX - laneLeft) / zoom - dragOffset.value.x);
+  const y = Math.round((event.clientY - laneTop) / zoom - dragOffset.value.y);
   triggerPositions.value = { ...triggerPositions.value, [draggingTriggerId.value]: { x, y } };
   dirty.value = true;
 }
@@ -741,11 +999,12 @@ function onTriggerMouseUp() {
 }
 
 function onTriggerPortMouseDown(t: Trigger, event: MouseEvent) {
+  event.preventDefault();
   const target = event.currentTarget as HTMLElement;
   const rect = target.getBoundingClientRect();
-  const { left: laneLeft, top: laneTop } = laneOffset();
-  const x = rect.left + rect.width / 2 - laneLeft;
-  const y = rect.top + rect.height / 2 - laneTop;
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  const x = (rect.left + rect.width / 2 - laneLeft) / zoom;
+  const y = (rect.top + rect.height / 2 - laneTop) / zoom;
   connectionDrag.value = { from: { kind: 'trigger', key: t.id, x, y }, x2: x, y2: y };
   window.addEventListener('mousemove', onConnectionMouseMove);
   window.addEventListener('mouseup', onConnectionMouseUp);
@@ -759,6 +1018,54 @@ function selectStep(stepKey: string) {
 function selectTrigger(id: string) {
   selectedTriggerId.value = id;
   selectedStepKey.value = null;
+}
+
+function startEditingStepName(step: StepDef) {
+  editingStepKey.value = step.stepKey;
+  editingTriggerId.value = null;
+  editingNameValue.value = stepDisplayName(step);
+  nextTick(() => (document.querySelector<HTMLInputElement>('.blueprint-node-title-input')?.focus()));
+}
+
+function startEditingTriggerName(t: Trigger) {
+  editingTriggerId.value = t.id;
+  editingStepKey.value = null;
+  editingNameValue.value = t.name;
+  nextTick(() => (document.querySelector<HTMLInputElement>('.blueprint-node-title-input')?.focus()));
+}
+
+function saveEditingStepName() {
+  const key = editingStepKey.value;
+  if (!key) return;
+  const step = steps.value.find(s => s.stepKey === key);
+  if (step) {
+    const val = editingNameValue.value.trim();
+    (step as { name?: string }).name = val || undefined;
+    steps.value = [...steps.value];
+    dirty.value = true;
+  }
+  editingStepKey.value = null;
+  editingNameValue.value = '';
+}
+
+async function saveEditingTriggerName() {
+  const id = editingTriggerId.value;
+  if (!id) return;
+  const val = editingNameValue.value.trim();
+  if (!val) {
+    editingTriggerId.value = null;
+    editingNameValue.value = '';
+    return;
+  }
+  try {
+    await api.patch(`/triggers/${id}`, { name: val });
+    const t = triggers.value.find(x => x.id === id);
+    if (t) (t as { name: string }).name = val;
+    editingTriggerId.value = null;
+    editingNameValue.value = '';
+  } catch (e: unknown) {
+    if (isApiError(e) && e.data?.message) error.value = e.data.message;
+  }
 }
 
 function onNodeContextMenu(step: StepDef, idx: number, event: MouseEvent) {
@@ -817,11 +1124,11 @@ function onCanvasContextMenu(event: MouseEvent) {
   let connection: { kind: 'step' | 'trigger'; fromKey: string; toKey: string } | null = null;
   const el = getCanvasElement();
   if (el) {
-    const { left, top } = laneOffset();
-    const x = event.clientX - left;
-    const y = event.clientY - top;
+    const { left, top, zoom } = laneOffset();
+    const x = (event.clientX - left) / zoom;
+    const y = (event.clientY - top) / zoom;
     let bestDist = Infinity;
-    const threshold = 10; // px
+    const threshold = 10 / zoom; // ~10px in screen space
     for (const seg of connectorSegments.value) {
       const d = distanceToSegment(x, y, seg);
       if (d < threshold && d < bestDist) {
@@ -840,15 +1147,10 @@ function onCanvasContextMenu(event: MouseEvent) {
 }
 
 function addStepFromContextAt(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF', clientX: number, clientY: number) {
-  const el = getCanvasElement();
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  const scrollLeft = el.scrollLeft ?? 0;
-  const scrollTop = el.scrollTop ?? 0;
-  const laneLeft = rect.left + 24;
-  const laneTop = rect.top + 24;
-  const canvasX = Math.round(clientX - laneLeft + scrollLeft);
-  const canvasY = Math.round(clientY - laneTop + scrollTop);
+  if (!getLaneElement()) return;
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  const canvasX = Math.round((clientX - laneLeft) / zoom);
+  const canvasY = Math.round((clientY - laneTop) / zoom);
   pendingPosition.value = { x: canvasX, y: canvasY };
   newStepType.value = type;
   if (type === 'action') {
@@ -873,16 +1175,11 @@ function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
 }
 
 function addTriggerFromContextAt(clientX: number, clientY: number) {
-  const el = getCanvasElement();
-  if (!el) return;
-  const rect = el.getBoundingClientRect();
-  const scrollLeft = el.scrollLeft ?? 0;
-  const scrollTop = el.scrollTop ?? 0;
-  const laneLeft = rect.left + 24;
-  const laneTop = rect.top + 24;
+  if (!getLaneElement()) return;
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
   pendingTriggerPosition.value = {
-    x: Math.round(clientX - laneLeft + scrollLeft),
-    y: Math.round(clientY - laneTop + scrollTop),
+    x: Math.round((clientX - laneLeft) / zoom),
+    y: Math.round((clientY - laneTop) / zoom),
   };
   openTriggerDialog();
 }
@@ -1197,23 +1494,61 @@ onMounted(loadAppsAndConnections);
 </script>
 
 <style scoped>
+/* Use 100% of space below app bar: no main scroll, canvas fills remaining area */
+.workflow-page {
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 64px);
+  max-height: calc(100vh - 64px);
+  overflow: hidden;
+  padding-top: 16px;
+}
+
+.workflow-blueprint-card {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workflow-blueprint-card-text {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
 .blueprint-canvas {
   position: relative;
+  flex: 1;
+  min-height: 300px;
   background-color: #0b1020;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
   background-size: 20px 20px;
   padding: 24px;
-  overflow: auto;
-  min-height: 80vh;
+  overflow: hidden;
   width: 100%;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.blueprint-canvas.blueprint-canvas-panning {
+  cursor: grabbing;
+}
+
+.blueprint-canvas-camera {
+  position: absolute;
+  left: 0;
+  top: 0;
+  will-change: transform;
 }
 
 .blueprint-lane {
   position: relative;
-  min-height: 800px;
-  width: 100%;
 }
 
 .blueprint-node {
@@ -1222,12 +1557,14 @@ onMounted(loadAppsAndConnections);
   min-width: 240px;
   max-width: 240px;
   border-radius: 12px;
-  border: 2px solid #42a5f5;
+  border: 2px solid #6b92b5;
   background: rgba(15, 23, 42, 0.96);
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.8), 0 10px 22px rgba(0, 0, 0, 0.6);
   color: #e3f2fd;
-  overflow: hidden;
+  overflow: visible;
   cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .blueprint-node:active {
@@ -1235,21 +1572,36 @@ onMounted(loadAppsAndConnections);
 }
 
 .blueprint-node-selected {
-  box-shadow: 0 0 0 2px #90caf9, 0 0 20px rgba(66, 165, 245, 0.4);
+  box-shadow: 0 0 0 2px #7da3c4, 0 0 20px rgba(125, 163, 196, 0.4);
 }
 
 .blueprint-connectors {
   position: absolute;
-  left: 24px;
-  top: 24px;
-  width: calc(100% - 48px);
-  height: calc(100% - 48px);
+  left: 0;
+  top: 0;
   /* Let pointer events pass through to nodes; we hit-test lines manually */
   pointer-events: none;
 }
 
+.blueprint-zoom-controls {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+}
+
+.blueprint-zoom-label {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  min-width: 3rem;
+  text-align: center;
+}
+
 .connector-line {
-  stroke: #90caf9;
+  stroke: #7da3c4;
   stroke-width: 2;
   fill: none;
 }
@@ -1260,7 +1612,7 @@ onMounted(loadAppsAndConnections);
 }
 
 .connector-line-dragging {
-  stroke: #42a5f5;
+  stroke: #6b92b5;
   stroke-width: 2;
 }
 
@@ -1309,21 +1661,95 @@ onMounted(loadAppsAndConnections);
 .blueprint-node-header {
   display: flex;
   align-items: center;
-  padding: 6px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+  padding: 8px 10px;
   color: #0b1020;
+  border-radius: 10px 10px 0 0; /* match node top corners (12px - 2px border) */
+}
+
+.blueprint-node-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
 }
 
 .blueprint-node-title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.25;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.blueprint-node-type-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  opacity: 0.85;
+}
+
+.blueprint-node-title-input {
+  width: 100%;
+  max-width: 180px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0b1020;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+  padding: 2px 6px;
+  outline: none;
+}
+
+.blueprint-node-title-input:focus {
+  border-color: rgba(0, 0, 0, 0.4);
+  background: #fff;
+}
+
+.blueprint-node-label-editable {
+  cursor: text;
+}
+
+.blueprint-node-label-editable:hover {
+  text-decoration: underline;
+  text-decoration-style: dotted;
 }
 
 .blueprint-node-body {
   padding: 10px 12px 12px;
   position: relative;
+  border-radius: 0 0 10px 10px; /* match node bottom corners */
+  min-height: 72px; /* fixed height so port Y is predictable for connector lines */
+  box-sizing: border-box;
+}
+
+.blueprint-block-info {
+  font-size: 11px;
+  line-height: 1.35;
+  padding: 4px 0 0 2px;
+  margin: 0;
+  pointer-events: none;
+  user-select: text;
+}
+
+.blueprint-block-info-line {
+  margin: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.blueprint-block-info-muted {
+  color: var(--vc-muted, #6b7a8c);
+}
+
+.blueprint-block-info-code {
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+  color: var(--vc-muted, #5a6575);
 }
 
 .blueprint-node-ports {
@@ -1357,13 +1783,14 @@ onMounted(loadAppsAndConnections);
 }
 
 .port {
-  width: 4px;
-  height: 4px;
+  width: 10px;
+  height: 10px;
   padding: 0;
   margin: 0;
   border-radius: 50%;
-  border: 2px solid #90caf9;
-  background: #0b1020;
+  border: 2px solid #7da3c4;
+  background: #253550;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 8px rgba(125, 163, 196, 0.4);
   pointer-events: auto;
   cursor: crosshair;
   flex-shrink: 0;
@@ -1375,26 +1802,29 @@ onMounted(loadAppsAndConnections);
 }
 
 .port-in {
-  margin-left: -4px;
+  margin-left: -8px;
 }
 
 .port-out {
-  margin-right: -4px;
+  margin-right: -8px;
 }
 
 .port-out-then {
-  border-color: #66bb6a;
-  background: #1b5e20;
+  border-color: #6a9a6a;
+  background: #3d7a3d;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 8px rgba(106, 154, 106, 0.45);
+  margin-top: 12px;
 }
 
 .port-out-else {
-  border-color: #ef5350;
-  background: #7f0000;
+  border-color: #c07875;
+  background: #9a4a48;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 0 8px rgba(192, 120, 117, 0.45);
+  margin-bottom: 12px;
 }
 
 .blueprint-node-label {
   font-size: 13px;
-  margin: 14px 0 4px;
 }
 
 .blueprint-node-meta {
@@ -1403,7 +1833,7 @@ onMounted(loadAppsAndConnections);
 }
 
 .blueprint-empty-hint {
-  color: #90caf9;
+  color: #7da3c4;
   font-size: 13px;
   opacity: 0.8;
 }
