@@ -29,14 +29,104 @@
     <v-alert v-if="error" type="error" dismissible class="flex-shrink-0" @click="error = ''">{{ error }}</v-alert>
 
     <v-card class="workflow-blueprint-card">
-      <v-card-title class="d-flex align-center flex-shrink-0">
-        Blueprint
-        <v-spacer />
-        <v-btn color="primary" size="small" :loading="saving" :disabled="!dirty" @click="saveVersion">
-          Save draft
-        </v-btn>
+      <v-card-title class="flex-shrink-0 pa-0">
+        <div class="workflow-blueprint-toolbar">
+          <span class="workflow-blueprint-title-label">Blueprint</span>
+          <v-spacer />
+          <div class="workflow-blueprint-toolbar-icons">
+            <v-tooltip location="bottom" text="Trigger">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  variant="text"
+                  size="small"
+                  class="workflow-blueprint-toolbar-btn"
+                  @click="addTriggerAtViewportCenter"
+                >
+                  <v-icon size="20" color="#876b98">mdi-lightning-bolt-outline</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip location="bottom" text="Action">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  variant="text"
+                  size="small"
+                  class="workflow-blueprint-toolbar-btn"
+                  @click="addStepAtViewportCenter('action')"
+                >
+                  <v-icon size="20" color="#5d9e5d">mdi-cog-outline</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip location="bottom" text="Map">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  variant="text"
+                  size="small"
+                  class="workflow-blueprint-toolbar-btn"
+                  @click="addStepAtViewportCenter('MAP')"
+                >
+                  <v-icon size="20" color="#6b92b5">mdi-map-outline</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip location="bottom" text="Filter">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  variant="text"
+                  size="small"
+                  class="workflow-blueprint-toolbar-btn"
+                  @click="addStepAtViewportCenter('FILTER')"
+                >
+                  <v-icon size="20" color="#9570a0">mdi-filter-outline</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip location="bottom" text="Loop">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  variant="text"
+                  size="small"
+                  class="workflow-blueprint-toolbar-btn"
+                  @click="addStepAtViewportCenter('LOOP')"
+                >
+                  <v-icon size="20" color="#c9a855">mdi-repeat</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
+            <v-tooltip location="bottom" text="If">
+              <template #activator="{ props: tooltipProps }">
+                <v-btn
+                  v-bind="tooltipProps"
+                  icon
+                  variant="text"
+                  size="small"
+                  class="workflow-blueprint-toolbar-btn"
+                  @click="addStepAtViewportCenter('IF')"
+                >
+                  <v-icon size="20" color="#b86d6a">mdi-source-branch</v-icon>
+                </v-btn>
+              </template>
+            </v-tooltip>
+          </div>
+          <v-spacer />
+          <v-btn color="primary" size="small" variant="tonal" :loading="saving" :disabled="!dirty" @click="saveVersion">
+            Save draft
+          </v-btn>
+        </div>
       </v-card-title>
       <v-card-text class="workflow-blueprint-card-text">
+        <div class="workflow-blueprint-canvas-wrap">
         <v-sheet
           ref="blueprintCanvas"
           class="blueprint-canvas"
@@ -83,6 +173,7 @@
               :on-edit="() => editTrigger(t)"
               :on-delete="() => confirmDeleteTrigger(t)"
               :on-port-mouse-down="(event) => onTriggerPortMouseDown(t, event)"
+              :is-output-drag-source="!!(connectionDrag?.from.kind === 'trigger' && connectionDrag.from.key === t.id)"
               @update:editingNameValue="val => editingNameValue = val"
             />
             <!-- Step nodes -->
@@ -108,6 +199,9 @@
                 :on-save-edit-name="saveEditingStepName"
                 :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
                 :on-remove="() => confirmRemoveStep(idx)"
+                :on-edit="() => openStepEditModal(step, idx)"
+                :is-input-drop-target="!!(connectionDrag && connectionDropTargetKey === step.stepKey)"
+                :is-output-drag-source="!!(connectionDrag?.from.kind === 'step' && connectionDrag?.from.key === step.stepKey)"
                 @update:editingNameValue="val => editingNameValue = val"
               />
               <WorkflowMapNode
@@ -121,7 +215,7 @@
                 :editing-name-value="editingNameValue"
                 :step-key="step.stepKey"
                 :show-input="hasInputPort(step)"
-                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :source-label="step.sourceStepKey ? stepDisplayNameByKey(step.sourceStepKey) : 'Not connected'"
                 :code-full="step.code"
                 :code-preview="codePreview(step.code)"
                 :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
@@ -131,6 +225,9 @@
                 :on-save-edit-name="saveEditingStepName"
                 :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
                 :on-remove="() => confirmRemoveStep(idx)"
+                :on-edit="() => openStepEditModal(step, idx)"
+                :is-input-drop-target="!!(connectionDrag && connectionDropTargetKey === step.stepKey)"
+                :is-output-drag-source="!!(connectionDrag?.from.kind === 'step' && connectionDrag?.from.key === step.stepKey)"
                 @update:editingNameValue="val => editingNameValue = val"
               />
               <WorkflowFilterNode
@@ -144,7 +241,7 @@
                 :editing-name-value="editingNameValue"
                 :step-key="step.stepKey"
                 :show-input="hasInputPort(step)"
-                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :source-label="step.sourceStepKey ? stepDisplayNameByKey(step.sourceStepKey) : 'Not connected'"
                 :code-full="step.code"
                 :code-preview="codePreview(step.code)"
                 :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
@@ -154,6 +251,9 @@
                 :on-save-edit-name="saveEditingStepName"
                 :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
                 :on-remove="() => confirmRemoveStep(idx)"
+                :on-edit="() => openStepEditModal(step, idx)"
+                :is-input-drop-target="!!(connectionDrag && connectionDropTargetKey === step.stepKey)"
+                :is-output-drag-source="!!(connectionDrag?.from.kind === 'step' && connectionDrag?.from.key === step.stepKey)"
                 @update:editingNameValue="val => editingNameValue = val"
               />
               <WorkflowLoopNode
@@ -167,7 +267,7 @@
                 :editing-name-value="editingNameValue"
                 :step-key="step.stepKey"
                 :show-input="hasInputPort(step)"
-                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :source-label="step.sourceStepKey ? stepDisplayNameByKey(step.sourceStepKey) : 'Not connected'"
                 :body-steps-count="step.bodySteps?.length ?? 0"
                 :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
                 :on-select="() => selectStep(step.stepKey)"
@@ -176,6 +276,9 @@
                 :on-save-edit-name="saveEditingStepName"
                 :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
                 :on-remove="() => confirmRemoveStep(idx)"
+                :on-edit="() => openStepEditModal(step, idx)"
+                :is-input-drop-target="!!(connectionDrag && connectionDropTargetKey === step.stepKey)"
+                :is-output-drag-source="!!(connectionDrag?.from.kind === 'step' && connectionDrag?.from.key === step.stepKey)"
                 @update:editingNameValue="val => editingNameValue = val"
               />
               <WorkflowIfNode
@@ -189,7 +292,7 @@
                 :editing-name-value="editingNameValue"
                 :step-key="step.stepKey"
                 :show-input="hasInputPort(step)"
-                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :source-label="step.sourceStepKey ? stepDisplayNameByKey(step.sourceStepKey) : 'Not connected'"
                 :branches="step.branches.map(br => ({ condition: br.condition, conditionPreview: codePreview(br.condition, 28), stepsCount: br.steps?.length ?? 0 }))"
                 :else-steps-count="step.elseSteps?.length ?? 0"
                 :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
@@ -199,6 +302,9 @@
                 :on-save-edit-name="saveEditingStepName"
                 :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
                 :on-remove="() => confirmRemoveStep(idx)"
+                :on-edit="() => openStepEditModal(step, idx)"
+                :is-input-drop-target="!!(connectionDrag && connectionDropTargetKey === step.stepKey)"
+                :is-output-drag-source="!!(connectionDrag?.from.kind === 'step' && connectionDrag?.from.key === step.stepKey)"
                 @update:editingNameValue="val => editingNameValue = val"
               />
             </template>
@@ -244,6 +350,7 @@
             <v-btn size="x-small" variant="text" @click="setZoom(1)">100%</v-btn>
           </div>
         </v-sheet>
+        </div>
       </v-card-text>
     </v-card>
 
@@ -283,6 +390,143 @@
           <v-spacer />
           <v-btn @click="triggerDialog = false">Cancel</v-btn>
           <v-btn color="primary" :loading="triggerSaving" @click="saveTrigger">Save</v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
+
+    <!-- Step edit dialog -->
+    <v-dialog :model-value="!!editingStep" max-width="560" persistent @update:model-value="(v) => !v && closeStepEditModal()">
+      <v-card v-if="editingStep">
+        <v-card-title>Edit {{ editingStep.step && isAppStep(editingStep.step) ? 'Action' : editingStep.step?.type ?? 'Step' }}</v-card-title>
+        <v-card-text>
+          <v-text-field v-model="stepEditForm.name" label="Name (optional)" placeholder="Display name for this block" class="mb-2" />
+
+          <!-- Action -->
+          <template v-if="editingStep.step && isAppStep(editingStep.step)">
+            <v-select
+              v-model="stepEditForm.actionId"
+              label="Action"
+              :items="allActionsFlat.map(a => ({ value: a.id, title: a.label }))"
+              item-title="title"
+              item-value="value"
+              density="compact"
+            />
+            <v-select
+              v-model="stepEditForm.connectionId"
+              label="Connection (optional)"
+              :items="stepEditConnections.map(c => ({ value: c.id, title: c.name }))"
+              item-title="title"
+              item-value="value"
+              clearable
+              density="compact"
+            />
+          </template>
+
+          <!-- Map / Filter -->
+          <template v-else-if="editingStep.step && (editingStep.step.type === 'MAP' || editingStep.step.type === 'FILTER')">
+            <v-select
+              v-model="stepEditForm.sourceStepKey"
+              label="Source step"
+              :items="[{ value: '', title: '— None —' }, ...stepEditSourceOptions]"
+              item-title="title"
+              item-value="value"
+              density="compact"
+            />
+            <v-textarea v-model="stepEditForm.code" label="Code" rows="6" placeholder="e.g. return input;" class="mt-2" />
+          </template>
+
+          <!-- Loop -->
+          <template v-else-if="editingStep.step && editingStep.step.type === 'LOOP'">
+            <v-select
+              v-model="stepEditForm.sourceStepKey"
+              label="Source step"
+              :items="[{ value: '', title: '— None —' }, ...stepEditSourceOptions]"
+              item-title="title"
+              item-value="value"
+              density="compact"
+            />
+            <div class="mt-3">
+              <div class="text-caption text-medium-emphasis mb-1">Body steps</div>
+              <div v-for="(body, bi) in (stepEditForm.bodySteps ?? [])" :key="body.stepKey" class="d-flex align-center gap-1 mb-1">
+                <v-select
+                  :model-value="body.actionId"
+                  :items="allActionsFlat.map(a => ({ value: a.id, title: a.label }))"
+                  item-title="title"
+                  item-value="value"
+                  density="compact"
+                  hide-details
+                  class="flex-grow-1"
+                  @update:model-value="(id) => stepEditSetBodyStepAction(bi, String(id ?? ''))"
+                />
+                <v-btn icon size="small" variant="text" @click="stepEditRemoveBodyStep(bi)">
+                  <v-icon size="18">mdi-close</v-icon>
+                </v-btn>
+              </div>
+              <v-btn size="small" variant="tonal" @click="stepEditAddBodyStep">Add step</v-btn>
+            </div>
+          </template>
+
+          <!-- IF -->
+          <template v-else-if="editingStep.step && editingStep.step.type === 'IF'">
+            <v-select
+              v-model="stepEditForm.sourceStepKey"
+              label="Source step"
+              :items="[{ value: '', title: '— None —' }, ...stepEditSourceOptions]"
+              item-title="title"
+              item-value="value"
+              density="compact"
+            />
+            <div class="mt-3">
+              <div class="text-caption text-medium-emphasis mb-1">Branches</div>
+              <div v-for="(branch, bi) in (stepEditForm.branches ?? [])" :key="bi" class="mb-3 pa-2 rounded border">
+                <v-textarea v-model="branch.condition" label="Condition" rows="2" density="compact" hide-details class="mb-2" />
+                <div v-for="(s, si) in branch.steps" :key="s.stepKey" class="d-flex align-center gap-1 mb-1">
+                  <v-select
+                    :model-value="s.actionId"
+                    :items="allActionsFlat.map(a => ({ value: a.id, title: a.label }))"
+                    item-title="title"
+                    item-value="value"
+                    density="compact"
+                    hide-details
+                    class="flex-grow-1"
+                    @update:model-value="(id) => stepEditSetBranchStepAction(bi, si, String(id ?? ''))"
+                  />
+                  <v-btn icon size="small" variant="text" @click="stepEditRemoveBranchStep(bi, si)">
+                    <v-icon size="18">mdi-close</v-icon>
+                  </v-btn>
+                </div>
+                <div class="d-flex gap-1">
+                  <v-btn size="small" variant="tonal" @click="stepEditAddBranchStep(bi)">Add step</v-btn>
+                  <v-btn size="small" variant="text" color="error" @click="stepEditRemoveBranch(bi)">Remove branch</v-btn>
+                </div>
+              </div>
+              <v-btn size="small" variant="tonal" class="mb-3" @click="stepEditAddBranch">Add branch</v-btn>
+            </div>
+            <div class="mt-2">
+              <div class="text-caption text-medium-emphasis mb-1">Else steps</div>
+              <div v-for="(s, si) in (stepEditForm.elseSteps ?? [])" :key="s.stepKey" class="d-flex align-center gap-1 mb-1">
+                <v-select
+                  :model-value="s.actionId"
+                  :items="allActionsFlat.map(a => ({ value: a.id, title: a.label }))"
+                  item-title="title"
+                  item-value="value"
+                  density="compact"
+                  hide-details
+                  class="flex-grow-1"
+                  @update:model-value="(id) => stepEditSetElseStepAction(si, String(id ?? ''))"
+                />
+                <v-btn icon size="small" variant="text" @click="stepEditRemoveElseStep(si)">
+                  <v-icon size="18">mdi-close</v-icon>
+                </v-btn>
+              </div>
+              <v-btn size="small" variant="tonal" @click="stepEditAddElseStep">Add else step</v-btn>
+            </div>
+          </template>
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn @click="closeStepEditModal">Cancel</v-btn>
+          <v-btn color="primary" @click="saveStepEdit">Save</v-btn>
         </v-card-actions>
       </v-card>
     </v-dialog>
@@ -337,7 +581,7 @@ interface AppStepDef {
 interface MapStepDef {
   stepKey: string;
   type: 'MAP';
-  sourceStepKey: string;
+  sourceStepKey?: string;
   code: string;
   name?: string;
   x?: number;
@@ -347,7 +591,7 @@ interface MapStepDef {
 interface FilterStepDef {
   stepKey: string;
   type: 'FILTER';
-  sourceStepKey: string;
+  sourceStepKey?: string;
   code: string;
   name?: string;
   x?: number;
@@ -357,17 +601,21 @@ interface FilterStepDef {
 interface LoopStepDef {
   stepKey: string;
   type: 'LOOP';
-  sourceStepKey: string;
+  sourceStepKey?: string;
   bodySteps: AppStepDef[];
   name?: string;
   x?: number;
   y?: number;
 }
-/** Native: IF - run first matching branch or else steps */
+/** Native: IF - run first matching branch or else steps. Exactly two outputs: then and else. */
 interface IfStepDef {
   stepKey: string;
   type: 'IF';
-  sourceStepKey: string;
+  sourceStepKey?: string;
+  /** Step key connected to the "then" output (at most one) */
+  thenStepKey?: string;
+  /** Step key connected to the "else" output (at most one) */
+  elseStepKey?: string;
   branches: { condition: string; steps: AppStepDef[] }[];
   elseSteps?: AppStepDef[];
   name?: string;
@@ -456,6 +704,183 @@ const triggerForm = ref({
 const triggerError = ref('');
 const triggerSaving = ref(false);
 
+/** Step edit modal: which step is being edited */
+const editingStep = ref<{ step: StepDef; idx: number } | null>(null);
+/** Form state for step edit (populated when opening by step type) */
+const stepEditForm = ref<{
+  name: string;
+  actionId?: string;
+  connectionId?: string;
+  sourceStepKey?: string;
+  code?: string;
+  bodySteps?: AppStepDef[];
+  branches?: { condition: string; steps: AppStepDef[] }[];
+  elseSteps?: AppStepDef[];
+}>({ name: '' });
+
+/** Connections list for the currently edited action (by stepEditForm.actionId) */
+const stepEditConnections = computed(() => {
+  if (!stepEditForm.value.actionId) return [];
+  const appId = allActionsFlat.value.find(a => a.id === stepEditForm.value.actionId)?.appId;
+  if (!appId) return [];
+  return connections.value.filter(c => c.appId === appId);
+});
+
+/** Available step keys for source dropdown (steps before current in list, or all for simplicity) */
+const stepEditSourceOptions = computed(() =>
+  steps.value.map(s => ({ value: s.stepKey, title: stepDisplayName(s) }))
+);
+
+function openStepEditModal(step: StepDef, idx: number) {
+  editingStep.value = { step, idx };
+  const base = { name: (step as { name?: string }).name ?? '' };
+  if (isAppStep(step)) {
+    stepEditForm.value = {
+      ...base,
+      actionId: step.actionId,
+      connectionId: step.connectionId ?? '',
+    };
+  } else if (step.type === 'MAP' || step.type === 'FILTER') {
+    stepEditForm.value = {
+      ...base,
+      sourceStepKey: step.sourceStepKey ?? '',
+      code: step.code ?? '',
+    };
+  } else if (step.type === 'LOOP') {
+    stepEditForm.value = {
+      ...base,
+      sourceStepKey: (step as LoopStepDef).sourceStepKey ?? '',
+      bodySteps: [...((step as LoopStepDef).bodySteps ?? [])],
+    };
+  } else if (step.type === 'IF') {
+    const s = step as IfStepDef;
+    stepEditForm.value = {
+      ...base,
+      sourceStepKey: s.sourceStepKey ?? '',
+      branches: (s.branches ?? []).map(b => ({ condition: b.condition, steps: [...(b.steps ?? [])] })),
+      elseSteps: [...(s.elseSteps ?? [])],
+    };
+  } else {
+    stepEditForm.value = base;
+  }
+}
+
+function saveStepEdit() {
+  const edit = editingStep.value;
+  if (!edit) return;
+  const { step, idx } = edit;
+  const form = stepEditForm.value;
+  const name = form.name?.trim() || undefined;
+
+  if (isAppStep(step)) {
+    (steps.value[idx] as AppStepDef).name = name;
+    (steps.value[idx] as AppStepDef).actionId = form.actionId ?? step.actionId;
+    (steps.value[idx] as AppStepDef).connectionId = form.connectionId?.trim() || undefined;
+  } else if (step.type === 'MAP') {
+    (steps.value[idx] as MapStepDef).name = name;
+    (steps.value[idx] as MapStepDef).sourceStepKey = form.sourceStepKey?.trim() || undefined;
+    (steps.value[idx] as MapStepDef).code = form.code?.trim() ?? '';
+  } else if (step.type === 'FILTER') {
+    (steps.value[idx] as FilterStepDef).name = name;
+    (steps.value[idx] as FilterStepDef).sourceStepKey = form.sourceStepKey?.trim() || undefined;
+    (steps.value[idx] as FilterStepDef).code = form.code?.trim() ?? '';
+  } else if (step.type === 'LOOP') {
+    (steps.value[idx] as LoopStepDef).name = name;
+    (steps.value[idx] as LoopStepDef).sourceStepKey = form.sourceStepKey?.trim() || undefined;
+    (steps.value[idx] as LoopStepDef).bodySteps = form.bodySteps ?? [];
+  } else if (step.type === 'IF') {
+    (steps.value[idx] as IfStepDef).name = name;
+    (steps.value[idx] as IfStepDef).sourceStepKey = form.sourceStepKey?.trim() || undefined;
+    (steps.value[idx] as IfStepDef).branches = form.branches ?? [];
+    (steps.value[idx] as IfStepDef).elseSteps = form.elseSteps?.length ? form.elseSteps : undefined;
+  }
+  editingStep.value = null;
+  dirty.value = true;
+}
+
+function closeStepEditModal() {
+  editingStep.value = null;
+}
+
+/** Add one body step to the loop being edited */
+function stepEditAddBodyStep() {
+  const list = stepEditForm.value.bodySteps ?? [];
+  const stepKey = `step_${Date.now()}_${list.length}`;
+  stepEditForm.value = {
+    ...stepEditForm.value,
+    bodySteps: [...list, { stepKey, actionId: allActionsFlat.value[0]?.id ?? '', connectionId: undefined }],
+  };
+}
+
+function stepEditRemoveBodyStep(bodyIdx: number) {
+  const list = [...(stepEditForm.value.bodySteps ?? [])];
+  list.splice(bodyIdx, 1);
+  stepEditForm.value = { ...stepEditForm.value, bodySteps: list };
+}
+
+function stepEditSetBodyStepAction(bodyIdx: number, actionId: string) {
+  const list = [...(stepEditForm.value.bodySteps ?? [])];
+  if (!list[bodyIdx]) return;
+  list[bodyIdx] = { ...list[bodyIdx], actionId, connectionId: undefined };
+  stepEditForm.value = { ...stepEditForm.value, bodySteps: list };
+}
+
+/** Add a branch to the IF being edited */
+function stepEditAddBranch() {
+  const branches = [...(stepEditForm.value.branches ?? [])];
+  branches.push({ condition: 'true', steps: [] });
+  stepEditForm.value = { ...stepEditForm.value, branches };
+}
+
+function stepEditRemoveBranch(branchIdx: number) {
+  const branches = [...(stepEditForm.value.branches ?? [])];
+  branches.splice(branchIdx, 1);
+  stepEditForm.value = { ...stepEditForm.value, branches };
+}
+
+function stepEditAddBranchStep(branchIdx: number) {
+  const branches = (stepEditForm.value.branches ?? []).map((b, i) =>
+    i === branchIdx
+      ? { ...b, steps: [...b.steps, { stepKey: `step_${Date.now()}`, actionId: allActionsFlat.value[0]?.id ?? '', connectionId: undefined }] }
+      : b
+  );
+  stepEditForm.value = { ...stepEditForm.value, branches };
+}
+
+function stepEditRemoveBranchStep(branchIdx: number, stepIdx: number) {
+  const branches = (stepEditForm.value.branches ?? []).map((b, i) =>
+    i === branchIdx ? { ...b, steps: b.steps.filter((_, j) => j !== stepIdx) } : b
+  );
+  stepEditForm.value = { ...stepEditForm.value, branches };
+}
+
+function stepEditSetBranchStepAction(branchIdx: number, stepIdx: number, actionId: string) {
+  const branches = (stepEditForm.value.branches ?? []).map((b, i) =>
+    i === branchIdx
+      ? { ...b, steps: b.steps.map((s, j) => (j === stepIdx ? { ...s, actionId } : s)) }
+      : b
+  );
+  stepEditForm.value = { ...stepEditForm.value, branches };
+}
+
+function stepEditAddElseStep() {
+  const elseSteps = [...(stepEditForm.value.elseSteps ?? [])];
+  elseSteps.push({ stepKey: `step_${Date.now()}`, actionId: allActionsFlat.value[0]?.id ?? '', connectionId: undefined });
+  stepEditForm.value = { ...stepEditForm.value, elseSteps };
+}
+
+function stepEditRemoveElseStep(stepIdx: number) {
+  const elseSteps = (stepEditForm.value.elseSteps ?? []).filter((_, j) => j !== stepIdx);
+  stepEditForm.value = { ...stepEditForm.value, elseSteps };
+}
+
+function stepEditSetElseStepAction(stepIdx: number, actionId: string) {
+  const elseSteps = [...(stepEditForm.value.elseSteps ?? [])];
+  if (!elseSteps[stepIdx]) return;
+  elseSteps[stepIdx] = { ...elseSteps[stepIdx], actionId };
+  stepEditForm.value = { ...stepEditForm.value, elseSteps };
+}
+
 const apps = ref<{ id: string; name: string; versions: { id: string; actions: { id: string; key: string; name: string }[] }[] }[]>([]);
 const allActionsFlat = computed(() => {
   const out: { id: string; appId: string; label: string }[] = [];
@@ -493,10 +918,10 @@ function stepActionName(actionId: string) {
 function stepLabel(step: StepDef): string {
   if (isAppStep(step)) return stepActionName(step.actionId);
   switch (step.type) {
-    case 'MAP': return `Map (from ${step.sourceStepKey})`;
-    case 'FILTER': return `Filter (from ${step.sourceStepKey})`;
-    case 'LOOP': return `Loop (from ${step.sourceStepKey}, ${step.bodySteps?.length ?? 0} body steps)`;
-    case 'IF': return `If (from ${step.sourceStepKey})`;
+    case 'MAP': return step.sourceStepKey ? `Map (from ${step.sourceStepKey})` : 'Map';
+    case 'FILTER': return step.sourceStepKey ? `Filter (from ${step.sourceStepKey})` : 'Filter';
+    case 'LOOP': return step.sourceStepKey ? `Loop (from ${step.sourceStepKey}, ${step.bodySteps?.length ?? 0} body steps)` : `Loop (${step.bodySteps?.length ?? 0} body steps)`;
+    case 'IF': return step.sourceStepKey ? `If (from ${step.sourceStepKey})` : 'If';
     default: return (step as { stepKey: string }).stepKey;
   }
 }
@@ -570,10 +995,12 @@ const pendingTriggerPosition = ref<{ x: number; y: number } | null>(null);
 
 /** Connection drag: from step or trigger output to a step input */
 const connectionDrag = ref<{
-  from: { kind: 'step' | 'trigger'; key: string; x: number; y: number };
+  from: { kind: 'step' | 'trigger'; key: string; x: number; y: number; port?: 'then' | 'else' };
   x2: number;
   y2: number;
 } | null>(null);
+/** While dragging a connection, the stepKey of the input port under the cursor (for drop-target glow) */
+const connectionDropTargetKey = ref<string | null>(null);
 
 function getCanvasElement(): HTMLElement | null {
   const raw = blueprintCanvas.value as any;
@@ -587,6 +1014,10 @@ const NODE_BODY_H = 72;
 const NODE_HEIGHT = NODE_HEADER_H + NODE_BODY_H;
 /** Port vertical center: empirically aligned so connector lines hit the dot centers (header 32px + body offset to port center) */
 const PORT_CENTER_Y = NODE_HEADER_H + 55;
+/** IF block: then port center Y from node top (margin-top 12px + half port 5px) */
+const IF_PORT_THEN_Y = NODE_HEADER_H + 12 + 5;
+/** IF block: else port center Y from node top (body height - margin-bottom 12 - half port 5) */
+const IF_PORT_ELSE_Y = NODE_HEADER_H + NODE_BODY_H - 12 - 5;
 /** Input port: body padding-left 12px + node border 2px = 14px to content; port margin-left -8, total port width 14px → center at 14 - 8 + 7 = 13 from node left */
 const PORT_INPUT_X_OFFSET = 1;
 /** Output port: from node right edge, port center is at -(12 + 2 - 8 + 7) = -13 (body pad + border - margin + half port) */
@@ -702,6 +1133,8 @@ interface ConnectorSegment {
   kind: 'step' | 'trigger';
   fromKey: string;
   toKey: string;
+  /** For step segments from an IF block: which output port (then vs else) */
+  fromPort?: 'then' | 'else';
 }
 
 /** Input port center Y offset from node top; use same as LOOP for all blocks so alignment is consistent */
@@ -709,20 +1142,26 @@ function getInputPortCenterY(_step: StepDef): number {
   return PORT_CENTER_Y;
 }
 
-/** Try to read the actual output port center from the DOM so lines originate from the dot (esp. IF blocks). Fallbacks to geometric estimate. */
-function getOutputPortCenter(step: StepDef): { x: number; y: number } | null {
+/** Try to read the actual output port center from the DOM so lines originate from the dot (esp. IF blocks). Uses the same coordinate system as the connector SVG (inner canvas). */
+function getOutputPortCenter(step: StepDef, port?: 'then' | 'else'): { x: number; y: number } | null {
   if (typeof window === 'undefined') return null;
   const lane = getLaneElement();
   if (!lane) return null;
-  const selector = isIfStep(step)
-    ? `.blueprint-node[data-step-key="${step.stepKey}"] .port-out-then`
-    : `.blueprint-node[data-step-key="${step.stepKey}"] .port-out`;
+  let selector: string;
+  if (isIfStep(step)) {
+    selector = port === 'else'
+      ? `.blueprint-node[data-step-key="${step.stepKey}"] .port-out-else`
+      : `.blueprint-node[data-step-key="${step.stepKey}"] .port-out-then`;
+  } else {
+    selector = `.blueprint-node[data-step-key="${step.stepKey}"] .port-out`;
+  }
   const el = lane.querySelector<HTMLElement>(selector);
   if (!el) return null;
   const rect = el.getBoundingClientRect();
-  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
-  const x = (rect.left + rect.width / 2 - laneLeft) / zoom;
-  const y = (rect.top + rect.height / 2 - laneTop) / zoom;
+  const laneRect = lane.getBoundingClientRect();
+  const zoom = canvasZoom.value;
+  const x = (rect.left + rect.width / 2 - laneRect.left) / zoom;
+  const y = (rect.top + rect.height / 2 - laneRect.top) / zoom;
   return { x, y };
 }
 
@@ -731,6 +1170,9 @@ function connectorLine(step: StepDef): ConnectorSegment {
     return { x1: 0, y1: 0, x2: 0, y2: 0, inputPortY: 0, kind: 'step', fromKey: '', toKey: '' };
   }
   const src = steps.value.find(s => s.stepKey === step.sourceStepKey);
+  if (src && isIfStep(src)) {
+    return { x1: 0, y1: 0, x2: 0, y2: 0, inputPortY: 0, kind: 'step', fromKey: '', toKey: '' };
+  }
   const srcIdx = src ? steps.value.indexOf(src) : -1;
   const dstIdx = steps.value.indexOf(step);
   const srcPos = src ? stepPosition(src, srcIdx) : { x: 0, y: 0 };
@@ -745,6 +1187,28 @@ function connectorLine(step: StepDef): ConnectorSegment {
     kind: 'step',
     fromKey: step.sourceStepKey,
     toKey: (step as any).stepKey,
+  };
+}
+
+/** Segment from an IF step's then or else port to a single target step. */
+function connectorLineFromIf(ifStep: IfStepDef, port: 'then' | 'else', toStepKey: string): ConnectorSegment {
+  const dst = steps.value.find(s => s.stepKey === toStepKey);
+  if (!dst) return { x1: 0, y1: 0, x2: 0, y2: 0, inputPortY: 0, kind: 'step', fromKey: '', toKey: '' };
+  const dstIdx = steps.value.indexOf(dst);
+  const dstPos = stepPosition(dst, dstIdx);
+  const inputPortY = dstPos.y + getInputPortCenterY(dst);
+  const ifIdx = steps.value.indexOf(ifStep);
+  const ifPos = stepPosition(ifStep, ifIdx);
+  return {
+    x1: ifPos.x + NODE_WIDTH + PORT_OUTPUT_X_OFFSET,
+    y1: ifPos.y + PORT_CENTER_Y,
+    x2: dstPos.x + PORT_INPUT_X_OFFSET,
+    y2: dstPos.y + PORT_CENTER_Y,
+    inputPortY,
+    kind: 'step',
+    fromKey: ifStep.stepKey,
+    toKey: toStepKey,
+    fromPort: port,
   };
 }
 
@@ -776,7 +1240,15 @@ const connectorSegments = computed<ConnectorSegment[]>(() => {
   const segs: ConnectorSegment[] = [];
   for (const step of steps.value) {
     if (!('sourceStepKey' in step) || !step.sourceStepKey) continue;
+    const src = steps.value.find(s => s.stepKey === step.sourceStepKey);
+    if (src && isIfStep(src)) continue;
     segs.push(connectorLine(step));
+  }
+  for (const step of steps.value) {
+    if (!isIfStep(step)) continue;
+    const ifStep = step as IfStepDef;
+    if (ifStep.thenStepKey) segs.push(connectorLineFromIf(ifStep, 'then', ifStep.thenStepKey));
+    if (ifStep.elseStepKey) segs.push(connectorLineFromIf(ifStep, 'else', ifStep.elseStepKey));
   }
   for (const edge of triggerEdges.value) {
     segs.push(triggerConnectorLine(edge));
@@ -793,10 +1265,15 @@ function connectorPath(seg: ConnectorSegment): string {
   if (seg.kind === 'step') {
     const src = steps.value.find(s => s.stepKey === seg.fromKey);
     if (src && isIfStep(src)) {
-      const out = getOutputPortCenter(src);
+      const out = getOutputPortCenter(src, seg.fromPort);
       if (out) {
         x1 = out.x;
         y1 = out.y;
+      } else {
+        const srcIdx = steps.value.indexOf(src);
+        const pos = stepPosition(src, srcIdx);
+        x1 = pos.x + NODE_WIDTH + PORT_OUTPUT_X_OFFSET;
+        y1 = pos.y + (seg.fromPort === 'else' ? IF_PORT_ELSE_Y : IF_PORT_THEN_Y);
       }
     }
   }
@@ -815,16 +1292,33 @@ function removeConnectionFromContext() {
   if (conn.kind === 'step') {
     const fromKey = conn.fromKey;
     const toKey = conn.toKey;
-    steps.value = steps.value.map((s) => {
-      if (!( 'sourceStepKey' in s)) return s;
-      const any = s as any;
-      const current = any.sourceStepKey as string | undefined;
-      if (!current) return s;
-      if (s.stepKey === toKey && current === fromKey) {
-        return { ...s, sourceStepKey: undefined } as StepDef;
-      }
-      return s;
-    });
+    const srcStep = steps.value.find(s => s.stepKey === fromKey);
+    if (srcStep && isIfStep(srcStep)) {
+      const ifStep = srcStep as IfStepDef;
+      steps.value = steps.value.map((s) => {
+        if (s.stepKey === fromKey) {
+          const def = s as IfStepDef;
+          return {
+            ...s,
+            thenStepKey: def.thenStepKey === toKey ? undefined : def.thenStepKey,
+            elseStepKey: def.elseStepKey === toKey ? undefined : def.elseStepKey,
+          } as StepDef;
+        }
+        if (s.stepKey === toKey && ('sourceStepKey' in s) && (s as any).sourceStepKey === fromKey) {
+          return { ...s, sourceStepKey: undefined } as StepDef;
+        }
+        return s;
+      });
+    } else {
+      steps.value = steps.value.map((s) => {
+        if (!('sourceStepKey' in s)) return s;
+        const any = s as any;
+        const current = any.sourceStepKey as string | undefined;
+        if (!current) return s;
+        if (s.stepKey === toKey && current === fromKey) return { ...s, sourceStepKey: undefined } as StepDef;
+        return s;
+      });
+    }
   } else {
     triggerEdges.value = triggerEdges.value.filter(
       (e) => !(e.triggerId === conn.fromKey && e.stepKey === conn.toKey),
@@ -853,11 +1347,15 @@ function laneOffset(): { left: number; top: number; zoom: number } {
 function onPortMouseDown(step: StepDef, event: MouseEvent) {
   event.preventDefault();
   const target = event.currentTarget as HTMLElement;
+  const dataPort = target.getAttribute('data-port');
+  let port: 'then' | 'else' | undefined;
+  if (isIfStep(step) && dataPort === 'out-then') port = 'then';
+  else if (isIfStep(step) && dataPort === 'out-else') port = 'else';
   const rect = target.getBoundingClientRect();
   const { left: laneLeft, top: laneTop, zoom } = laneOffset();
   const x = (rect.left + rect.width / 2 - laneLeft) / zoom;
   const y = (rect.top + rect.height / 2 - laneTop) / zoom;
-  connectionDrag.value = { from: { kind: 'step', key: step.stepKey, x, y }, x2: x, y2: y };
+  connectionDrag.value = { from: { kind: 'step', key: step.stepKey, x, y, port }, x2: x, y2: y };
   window.addEventListener('mousemove', onConnectionMouseMove);
   window.addEventListener('mouseup', onConnectionMouseUp);
 }
@@ -867,6 +1365,10 @@ function onConnectionMouseMove(event: MouseEvent) {
   const { left: laneLeft, top: laneTop, zoom } = laneOffset();
   connectionDrag.value.x2 = (event.clientX - laneLeft) / zoom;
   connectionDrag.value.y2 = (event.clientY - laneTop) / zoom;
+  const el = document.elementFromPoint(event.clientX, event.clientY);
+  const inPort = el?.closest?.('[data-port="in"]');
+  const stepKey = inPort?.getAttribute('data-step-key') ?? null;
+  connectionDropTargetKey.value = stepKey;
 }
 
 function onConnectionMouseUp(event: MouseEvent) {
@@ -881,24 +1383,34 @@ function onConnectionMouseUp(event: MouseEvent) {
     if (step && hasInputPort(step)) {
       if (from.kind === 'step') {
         const newSourceKey = from.key;
-        steps.value = steps.value.map((s) => {
-          if (!('sourceStepKey' in s)) return s;
-          const any = s as any;
-          const current = any.sourceStepKey as string | undefined;
-          // For IF steps we allow multiple outgoing connections; for others keep at most one.
-          if (current === newSourceKey && s.stepKey !== stepKey) {
-            const srcStep = steps.value.find(x => x.stepKey === newSourceKey);
-            if (srcStep && isIfStep(srcStep)) {
-              return s;
+        const srcStep = steps.value.find(x => x.stepKey === newSourceKey);
+        if (srcStep && isIfStep(srcStep) && (from.port === 'then' || from.port === 'else')) {
+          const ifStep = srcStep as IfStepDef;
+          const oldThen = ifStep.thenStepKey;
+          const oldElse = ifStep.elseStepKey;
+          steps.value = steps.value.map((s) => {
+            if (s.stepKey === newSourceKey) {
+              return {
+                ...s,
+                thenStepKey: from.port === 'then' ? stepKey : (s as IfStepDef).thenStepKey,
+                elseStepKey: from.port === 'else' ? stepKey : (s as IfStepDef).elseStepKey,
+              } as StepDef;
             }
-            return { ...s, sourceStepKey: undefined } as StepDef;
-          }
-          // Set connection on the newly targeted step
-          if (s.stepKey === stepKey) {
-            return { ...s, sourceStepKey: newSourceKey } as StepDef;
-          }
-          return s;
-        });
+            if (from.port === 'then' && s.stepKey === oldThen) return { ...s, sourceStepKey: undefined } as StepDef;
+            if (from.port === 'else' && s.stepKey === oldElse) return { ...s, sourceStepKey: undefined } as StepDef;
+            if (s.stepKey === stepKey) return { ...s, sourceStepKey: newSourceKey } as StepDef;
+            return s;
+          });
+        } else {
+          steps.value = steps.value.map((s) => {
+            if (!('sourceStepKey' in s)) return s;
+            const any = s as any;
+            const current = any.sourceStepKey as string | undefined;
+            if (current === newSourceKey && s.stepKey !== stepKey) return { ...s, sourceStepKey: undefined } as StepDef;
+            if (s.stepKey === stepKey) return { ...s, sourceStepKey: newSourceKey } as StepDef;
+            return s;
+          });
+        }
       } else if (from.kind === 'trigger') {
         const trigId = from.key;
         triggerEdges.value = [
@@ -912,15 +1424,30 @@ function onConnectionMouseUp(event: MouseEvent) {
     // Dropped on empty space or same node: treat as "delete connection" from this output
     if (from.kind === 'step') {
       const outKey = from.key;
-      steps.value = steps.value.map((s) => {
-        if (!('sourceStepKey' in s)) return s;
-        const any = s as any;
-        const current = any.sourceStepKey as string | undefined;
-        if (current === outKey) {
-          return { ...s, sourceStepKey: undefined } as StepDef;
-        }
-        return s;
-      });
+      const srcStep = steps.value.find(s => s.stepKey === outKey);
+      if (srcStep && isIfStep(srcStep) && (from.port === 'then' || from.port === 'else')) {
+        const ifStep = srcStep as IfStepDef;
+        const keyToClear = from.port === 'then' ? ifStep.thenStepKey : ifStep.elseStepKey;
+        steps.value = steps.value.map((s) => {
+          if (s.stepKey === outKey) {
+            return {
+              ...s,
+              thenStepKey: from.port === 'then' ? undefined : (s as IfStepDef).thenStepKey,
+              elseStepKey: from.port === 'else' ? undefined : (s as IfStepDef).elseStepKey,
+            } as StepDef;
+          }
+          if (keyToClear && s.stepKey === keyToClear) return { ...s, sourceStepKey: undefined } as StepDef;
+          return s;
+        });
+      } else {
+        steps.value = steps.value.map((s) => {
+          if (!('sourceStepKey' in s)) return s;
+          const any = s as any;
+          const current = any.sourceStepKey as string | undefined;
+          if (current === outKey) return { ...s, sourceStepKey: undefined } as StepDef;
+          return s;
+        });
+      }
     } else if (from.kind === 'trigger') {
       const trigId = from.key;
       triggerEdges.value = triggerEdges.value.filter(e => e.triggerId !== trigId);
@@ -928,6 +1455,7 @@ function onConnectionMouseUp(event: MouseEvent) {
     dirty.value = true;
   }
   connectionDrag.value = null;
+  connectionDropTargetKey.value = null;
   window.removeEventListener('mousemove', onConnectionMouseMove);
   window.removeEventListener('mouseup', onConnectionMouseUp);
 }
@@ -1165,13 +1693,13 @@ function addStepFromContextAt(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF',
     newStepActionId.value = allActionsFlat.value[0]?.id ?? null;
     newStepConnectionId.value = null;
   } else if (type === 'MAP' || type === 'FILTER') {
-    newNativeSourceStepKey.value = steps.value[0]?.stepKey ?? '';
+    newNativeSourceStepKey.value = '';
     newNativeCode.value = type === 'MAP' ? 'return input;' : 'return true;';
   } else if (type === 'LOOP') {
-    newLoopSourceStepKey.value = steps.value[0]?.stepKey ?? '';
+    newLoopSourceStepKey.value = '';
     newLoopBodySteps.value = allActionsFlat.value[0] ? [{ stepKey: `loop_body_0`, actionId: allActionsFlat.value[0].id }] : [];
   } else if (type === 'IF') {
-    newIfSourceStepKey.value = steps.value[0]?.stepKey ?? '';
+    newIfSourceStepKey.value = '';
     newIfBranches.value = [{ condition: 'true', steps: allActionsFlat.value[0] ? [{ stepKey: 'if_0', actionId: allActionsFlat.value[0].id }] : [] }];
     newIfElseSteps.value = [];
   }
@@ -1180,6 +1708,46 @@ function addStepFromContextAt(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF',
 
 function addStepFromContext(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
   addStepFromContextAt(type, contextMenu.value.clientX, contextMenu.value.clientY);
+}
+
+function getViewportCenterInLaneCoords(): { x: number; y: number } {
+  const el = getCanvasElement();
+  const zoom = canvasZoom.value;
+  const pan = canvasPan.value;
+  if (!el) return { x: 200, y: 120 };
+  const r = el.getBoundingClientRect();
+  const padding = CANVAS_PADDING_VIEW;
+  return {
+    x: Math.round((r.width / 2 - padding - pan.x) / zoom),
+    y: Math.round((r.height / 2 - padding - pan.y) / zoom),
+  };
+}
+
+function addTriggerAtViewportCenter() {
+  const { x, y } = getViewportCenterInLaneCoords();
+  pendingTriggerPosition.value = { x, y };
+  openTriggerDialog();
+}
+
+function addStepAtViewportCenter(type: 'action' | 'MAP' | 'FILTER' | 'LOOP' | 'IF') {
+  const { x, y } = getViewportCenterInLaneCoords();
+  pendingPosition.value = { x, y };
+  newStepType.value = type;
+  if (type === 'action') {
+    newStepActionId.value = allActionsFlat.value[0]?.id ?? null;
+    newStepConnectionId.value = null;
+  } else if (type === 'MAP' || type === 'FILTER') {
+    newNativeSourceStepKey.value = '';
+    newNativeCode.value = type === 'MAP' ? 'return input;' : 'return true;';
+  } else if (type === 'LOOP') {
+    newLoopSourceStepKey.value = '';
+    newLoopBodySteps.value = allActionsFlat.value[0] ? [{ stepKey: `loop_body_0`, actionId: allActionsFlat.value[0].id }] : [];
+  } else if (type === 'IF') {
+    newIfSourceStepKey.value = '';
+    newIfBranches.value = [{ condition: 'true', steps: allActionsFlat.value[0] ? [{ stepKey: 'if_0', actionId: allActionsFlat.value[0].id }] : [] }];
+    newIfElseSteps.value = [];
+  }
+  addStep();
 }
 
 function addTriggerFromContextAt(clientX: number, clientY: number) {
@@ -1194,9 +1762,9 @@ function addTriggerFromContextAt(clientX: number, clientY: number) {
 
 const canAddNewStep = computed(() => {
   if (newStepType.value === 'action') return !!newStepActionId.value;
-  if (newStepType.value === 'MAP' || newStepType.value === 'FILTER') return !!newNativeSourceStepKey.value && !!newNativeCode.value.trim();
-  if (newStepType.value === 'LOOP') return !!newLoopSourceStepKey.value && newLoopBodySteps.value.length > 0;
-  if (newStepType.value === 'IF') return !!newIfSourceStepKey.value && newIfBranches.value.some(b => b.condition.trim());
+  if (newStepType.value === 'MAP' || newStepType.value === 'FILTER') return !!newNativeCode.value.trim();
+  if (newStepType.value === 'LOOP') return newLoopBodySteps.value.length > 0;
+  if (newStepType.value === 'IF') return newIfBranches.value.some(b => b.condition.trim());
   return false;
 });
 
@@ -1204,11 +1772,29 @@ async function loadWorkflow() {
   try {
     workflow.value = await api.get<Workflow>(`/workflows/${workflowId.value}`);
     const graph = latestVersion.value?.graph as { steps?: StepDef[] } | undefined;
-    steps.value = graph?.steps ?? [];
+    let rawSteps = graph?.steps ?? [];
+    rawSteps = migrateIfStepConnections(rawSteps);
+    steps.value = rawSteps;
     dirty.value = false;
   } catch (e: unknown) {
     if (isApiError(e) && e.data?.message) error.value = e.data.message;
   }
+}
+
+/** Migrate legacy IF steps: set thenStepKey/elseStepKey from first two steps with sourceStepKey = this IF */
+function migrateIfStepConnections(stepsList: StepDef[]): StepDef[] {
+  return stepsList.map((s) => {
+    if (!isIfStep(s)) return s;
+    const ifStep = s as IfStepDef;
+    if (ifStep.thenStepKey != null && ifStep.elseStepKey != null) return s;
+    const targets = stepsList.filter(
+      (t): t is StepDef & { sourceStepKey: string } =>
+        'sourceStepKey' in t && t.sourceStepKey === ifStep.stepKey
+    );
+    const thenKey = ifStep.thenStepKey ?? targets[0]?.stepKey;
+    const elseKey = ifStep.elseStepKey ?? targets[1]?.stepKey;
+    return { ...ifStep, thenStepKey: thenKey, elseStepKey: elseKey } as IfStepDef;
+  });
 }
 
 async function loadTriggers() {
@@ -1259,7 +1845,7 @@ function addStep() {
     steps.value.push({
       stepKey,
       type: 'MAP',
-      sourceStepKey: newNativeSourceStepKey.value,
+      sourceStepKey: newNativeSourceStepKey.value.trim() || undefined,
       code: newNativeCode.value.trim(),
       x: pos.x,
       y: pos.y,
@@ -1270,7 +1856,7 @@ function addStep() {
     steps.value.push({
       stepKey,
       type: 'FILTER',
-      sourceStepKey: newNativeSourceStepKey.value,
+      sourceStepKey: newNativeSourceStepKey.value.trim() || undefined,
       code: newNativeCode.value.trim(),
       x: pos.x,
       y: pos.y,
@@ -1286,7 +1872,7 @@ function addStep() {
     steps.value.push({
       stepKey,
       type: 'LOOP',
-      sourceStepKey: newLoopSourceStepKey.value,
+      sourceStepKey: newLoopSourceStepKey.value.trim() || undefined,
       bodySteps: body,
       x: pos.x,
       y: pos.y,
@@ -1304,7 +1890,7 @@ function addStep() {
     steps.value.push({
       stepKey,
       type: 'IF',
-      sourceStepKey: newIfSourceStepKey.value,
+      sourceStepKey: newIfSourceStepKey.value.trim() || undefined,
       branches,
       elseSteps: elseSteps.length ? elseSteps : undefined,
       x: pos.x,
@@ -1493,7 +2079,8 @@ watch(latestVersion, () => {
     triggerPositions?: Record<string, { x: number; y: number }>;
     triggerEdges?: TriggerEdge[];
   } | undefined;
-  steps.value = graph?.steps ?? [];
+  const rawSteps = graph?.steps ?? [];
+  steps.value = migrateIfStepConnections(rawSteps);
   triggerPositions.value = graph?.triggerPositions ?? {};
   triggerEdges.value = graph?.triggerEdges ?? [];
   dirty.value = false;
@@ -1526,6 +2113,40 @@ onMounted(loadAppsAndConnections);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+}
+
+.workflow-blueprint-toolbar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  padding: 8px 16px;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.04);
+  border-radius: 8px;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.workflow-blueprint-title-label {
+  font-weight: 600;
+  font-size: 1rem;
+}
+
+.workflow-blueprint-toolbar-icons {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.workflow-blueprint-toolbar-btn {
+  margin: 0 2px;
+}
+
+.workflow-blueprint-canvas-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .v-sheet.blueprint-canvas {
@@ -1625,6 +2246,7 @@ onMounted(loadAppsAndConnections);
 .connector-line-dragging {
   stroke: #6b92b5;
   stroke-width: 2;
+  pointer-events: none;
 }
 
 @keyframes connector-flow {
@@ -1806,6 +2428,17 @@ onMounted(loadAppsAndConnections);
   cursor: crosshair;
   flex-shrink: 0;
   box-sizing: content-box;
+  transition: box-shadow 0.15s ease, transform 0.15s ease;
+}
+.port:hover,
+.port.port-drag-source,
+.port.port-drop-target {
+  box-shadow: 0 0 0 2px rgba(125, 163, 196, 0.9), 0 0 16px rgba(125, 163, 196, 0.7), 0 0 24px rgba(125, 163, 196, 0.4);
+  transform: scale(1.35);
+}
+.port.port-drop-target {
+  border-color: #9ec5e8;
+  background: #3a5a7a;
 }
 
 .blueprint-node-trigger .blueprint-node-ports-right {

@@ -37,6 +37,7 @@
         <div class="blueprint-node-ports-right">
           <div
             class="port port-out"
+            :class="{ 'port-drag-source': isOutputDragSource }"
             data-port="out"
             :data-trigger-id="id"
             @mousedown.stop="onPortMouseDown"
@@ -76,6 +77,7 @@ const props = defineProps<{
   onEdit: () => void;
   onDelete: () => void;
   onPortMouseDown: (event: MouseEvent) => void;
+  isOutputDragSource?: boolean;
 }>();
 
 const emit = defineEmits<{

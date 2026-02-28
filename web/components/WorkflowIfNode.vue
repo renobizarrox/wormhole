@@ -26,6 +26,9 @@
         <span class="blueprint-node-type-label">{{ typeLabel }}</span>
       </div>
       <v-spacer />
+      <v-btn v-if="onEdit" icon size="x-small" variant="text" @mousedown.stop @click.stop="onEdit">
+        <v-icon size="14">mdi-pencil</v-icon>
+      </v-btn>
       <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="onRemove">
         <v-icon size="16">mdi-close</v-icon>
       </v-btn>
@@ -36,6 +39,7 @@
           <div
             v-if="showInput"
             class="port port-in"
+            :class="{ 'port-drop-target': isInputDropTarget }"
             data-port="in"
             :data-step-key="stepKey"
           ></div>
@@ -43,12 +47,14 @@
         <div class="blueprint-node-ports-right blueprint-node-ports-right-if">
           <div
             class="port port-out port-out-then"
+            :class="{ 'port-drag-source': isOutputDragSource }"
             data-port="out-then"
             :data-step-key="stepKey"
             @mousedown.stop="onPortMouseDown"
           ></div>
           <div
             class="port port-out port-out-else"
+            :class="{ 'port-drag-source': isOutputDragSource }"
             data-port="out-else"
             :data-step-key="stepKey"
             @mousedown.stop="onPortMouseDown"
@@ -91,6 +97,9 @@ const props = defineProps<{
   onSaveEditName: () => void;
   onPortMouseDown: (event: MouseEvent) => void;
   onRemove: () => void;
+  onEdit?: () => void;
+  isInputDropTarget?: boolean;
+  isOutputDragSource?: boolean;
 }>();
 
 const emit = defineEmits<{
