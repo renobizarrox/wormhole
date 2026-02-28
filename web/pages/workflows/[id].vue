@@ -62,171 +62,146 @@
               :style="{ width: canvasContentSize.width + 'px', height: canvasContentSize.height + 'px' }"
             >
             <!-- Trigger nodes -->
-            <div
+            <WorkflowTriggerNode
               v-for="t in triggers"
               :key="t.id"
-              class="blueprint-node blueprint-node-trigger"
-              :class="{ 'blueprint-node-selected': selectedTriggerId === t.id }"
+              :id="t.id"
+              :name="t.name"
+              :type="t.type"
+              :webhook-path="t.webhookPath"
+              :cron-expression="t.cronExpression"
+              :selected="selectedTriggerId === t.id"
               :style="triggerNodeStyle(t)"
-              @mousedown.stop="onTriggerNodeMouseDown(t, $event)"
-              @click.stop="selectTrigger(t.id)"
-            >
-              <div class="blueprint-node-header" style="background-color: #876b98;">
-                <div class="blueprint-node-header-text" @mousedown.stop>
-                  <input
-                    v-if="editingTriggerId === t.id"
-                    v-model="editingNameValue"
-                    class="blueprint-node-title-input"
-                    @blur="saveEditingTriggerName"
-                    @keydown.enter="saveEditingTriggerName"
-                  />
-                  <span
-                    v-else
-                    class="blueprint-node-title blueprint-node-label-editable"
-                    @click="startEditingTriggerName(t)"
-                  >{{ t.name }}</span>
-                  <span class="blueprint-node-type-label">Trigger</span>
-                </div>
-                <v-spacer />
-                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="editTrigger(t)">
-                  <v-icon size="14">mdi-pencil</v-icon>
-                </v-btn>
-                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="confirmDeleteTrigger(t)">
-                  <v-icon size="14">mdi-close</v-icon>
-                </v-btn>
-              </div>
-              <div class="blueprint-node-body">
-                <div class="blueprint-node-ports">
-                  <div class="blueprint-node-ports-left"></div>
-                  <div class="blueprint-node-ports-right">
-                    <div
-                      class="port port-out"
-                      data-port="out"
-                      :data-trigger-id="t.id"
-                      @mousedown.stop="onTriggerPortMouseDown(t, $event)"
-                    ></div>
-                  </div>
-                </div>
-                <div class="blueprint-block-info">
-                  <div class="blueprint-block-info-line">{{ t.type }}</div>
-                  <template v-if="t.type === 'WEBHOOK' && t.webhookPath">
-                    <div class="blueprint-block-info-line blueprint-block-info-muted">/{{ t.webhookPath }}</div>
-                  </template>
-                  <template v-else-if="t.type === 'CRON' && t.cronExpression">
-                    <div class="blueprint-block-info-line blueprint-block-info-muted">{{ t.cronExpression }}</div>
-                  </template>
-                </div>
-              </div>
-            </div>
+              color="#876b98"
+              type-label="Trigger"
+              :is-editing-name="editingTriggerId === t.id"
+              :editing-name-value="editingNameValue"
+              :on-node-mouse-down="(event) => onTriggerNodeMouseDown(t, event)"
+              :on-select="() => selectTrigger(t.id)"
+              :on-start-edit-name="() => startEditingTriggerName(t)"
+              :on-save-edit-name="saveEditingTriggerName"
+              :on-edit="() => editTrigger(t)"
+              :on-delete="() => confirmDeleteTrigger(t)"
+              :on-port-mouse-down="(event) => onTriggerPortMouseDown(t, event)"
+              @update:editingNameValue="val => editingNameValue = val"
+            />
             <!-- Step nodes -->
-            <div
-              v-for="(step, idx) in steps"
-              :key="step.stepKey"
-              class="blueprint-node"
-              :class="{ 'blueprint-node-selected': selectedStepKey === step.stepKey, 'blueprint-node-if': isIfStep(step) }"
-              :style="nodeStyle(step, idx)"
-              :data-step-key="step.stepKey"
-              @mousedown.stop="onNodeMouseDown(step, $event)"
-              @click.stop="selectStep(step.stepKey)"
-              @contextmenu.prevent="onNodeContextMenu(step, idx, $event)"
-            >
-              <div class="blueprint-node-header" :style="{ backgroundColor: nodeColor(step) }">
-                <div class="blueprint-node-header-text" @mousedown.stop>
-                  <input
-                    v-if="editingStepKey === step.stepKey"
-                    v-model="editingNameValue"
-                    class="blueprint-node-title-input"
-                    @blur="saveEditingStepName"
-                    @keydown.enter="saveEditingStepName"
-                  />
-                  <span
-                    v-else
-                    class="blueprint-node-title blueprint-node-label-editable"
-                    @click="startEditingStepName(step)"
-                  >{{ stepDisplayName(step) }}</span>
-                  <span class="blueprint-node-type-label">{{ nodeType(step) }}</span>
-                </div>
-                <v-spacer />
-                <v-btn icon size="x-small" variant="text" @mousedown.stop @click.stop="confirmRemoveStep(idx)">
-                  <v-icon size="16">mdi-close</v-icon>
-                </v-btn>
-              </div>
-              <div class="blueprint-node-body">
-                <div class="blueprint-node-ports">
-                  <div class="blueprint-node-ports-left">
-                    <div
-                      v-if="hasInputPort(step)"
-                      class="port port-in"
-                      data-port="in"
-                      :data-step-key="step.stepKey"
-                    ></div>
-                  </div>
-                  <div
-                    class="blueprint-node-ports-right"
-                    :class="{ 'blueprint-node-ports-right-if': isIfStep(step) }"
-                  >
-                    <template v-if="isIfStep(step)">
-                      <div
-                        class="port port-out port-out-then"
-                        data-port="out-then"
-                        :data-step-key="step.stepKey"
-                        @mousedown.stop="onPortMouseDown(step, $event)"
-                      ></div>
-                      <div
-                        class="port port-out port-out-else"
-                        data-port="out-else"
-                        :data-step-key="step.stepKey"
-                        @mousedown.stop="onPortMouseDown(step, $event)"
-                      ></div>
-                    </template>
-                    <div
-                      v-else
-                      class="port port-out"
-                      data-port="out"
-                      :data-step-key="step.stepKey"
-                      @mousedown.stop="onPortMouseDown(step, $event)"
-                    ></div>
-                  </div>
-                </div>
-                <!-- Action: app/action + connection -->
-                <div v-if="isAppStep(step)" class="blueprint-block-info">
-                  <div class="blueprint-block-info-line">{{ stepActionName(step.actionId) }}</div>
-                  <div v-if="step.connectionId" class="blueprint-block-info-line blueprint-block-info-muted">
-                    Connection: {{ connectionName(step.connectionId) }}
-                  </div>
-                  <div v-else-if="step.inputMapping && Object.keys(step.inputMapping).length" class="blueprint-block-info-line blueprint-block-info-muted">
-                    {{ Object.keys(step.inputMapping).length }} input(s) mapped
-                  </div>
-                </div>
-                <!-- MAP: source + code preview -->
-                <div v-else-if="step.type === 'MAP'" class="blueprint-block-info">
-                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
-                  <div class="blueprint-block-info-line blueprint-block-info-code" :title="step.code">{{ codePreview(step.code) }}</div>
-                </div>
-                <!-- FILTER: source + condition preview -->
-                <div v-else-if="step.type === 'FILTER'" class="blueprint-block-info">
-                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
-                  <div class="blueprint-block-info-line blueprint-block-info-code" :title="step.code">{{ codePreview(step.code) }}</div>
-                </div>
-                <!-- LOOP: source + body count -->
-                <div v-else-if="step.type === 'LOOP'" class="blueprint-block-info">
-                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
-                  <div class="blueprint-block-info-line blueprint-block-info-muted">{{ step.bodySteps?.length ?? 0 }} step(s) in loop</div>
-                </div>
-                <!-- IF: source + branches/else -->
-                <div v-else-if="step.type === 'IF'" class="blueprint-block-info">
-                  <div class="blueprint-block-info-line">From: {{ stepDisplayNameByKey(step.sourceStepKey) }}</div>
-                  <template v-for="(br, i) in step.branches" :key="i">
-                    <div class="blueprint-block-info-line blueprint-block-info-code" :title="br.condition">
-                      when {{ codePreview(br.condition, 28) }} → {{ br.steps?.length ?? 0 }} step(s)
-                    </div>
-                  </template>
-                  <div v-if="step.elseSteps?.length" class="blueprint-block-info-line blueprint-block-info-muted">
-                    else → {{ step.elseSteps.length }} step(s)
-                  </div>
-                </div>
-              </div>
-            </div>
+            <template v-for="(step, idx) in steps" :key="step.stepKey">
+              <WorkflowActionNode
+                v-if="isAppStep(step)"
+                :selected="selectedStepKey === step.stepKey"
+                :style="nodeStyle(step, idx)"
+                :color="nodeColor(step)"
+                :name="stepDisplayName(step)"
+                :type-label="nodeType(step)"
+                :is-editing-name="editingStepKey === step.stepKey"
+                :editing-name-value="editingNameValue"
+                :step-key="step.stepKey"
+                :show-input="hasInputPort(step)"
+                :body-main="stepActionName(step.actionId)"
+                :connection-label="step.connectionId ? `Connection: ${connectionName(step.connectionId)}` : ''"
+                :inputs-mapped-count="step.inputMapping ? Object.keys(step.inputMapping).length : 0"
+                :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
+                :on-select="() => selectStep(step.stepKey)"
+                :on-context-menu="(event) => onNodeContextMenu(step, idx, event)"
+                :on-start-edit-name="() => startEditingStepName(step)"
+                :on-save-edit-name="saveEditingStepName"
+                :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
+                :on-remove="() => confirmRemoveStep(idx)"
+                @update:editingNameValue="val => editingNameValue = val"
+              />
+              <WorkflowMapNode
+                v-else-if="step.type === 'MAP'"
+                :selected="selectedStepKey === step.stepKey"
+                :style="nodeStyle(step, idx)"
+                :color="nodeColor(step)"
+                :name="stepDisplayName(step)"
+                :type-label="nodeType(step)"
+                :is-editing-name="editingStepKey === step.stepKey"
+                :editing-name-value="editingNameValue"
+                :step-key="step.stepKey"
+                :show-input="hasInputPort(step)"
+                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :code-full="step.code"
+                :code-preview="codePreview(step.code)"
+                :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
+                :on-select="() => selectStep(step.stepKey)"
+                :on-context-menu="(event) => onNodeContextMenu(step, idx, event)"
+                :on-start-edit-name="() => startEditingStepName(step)"
+                :on-save-edit-name="saveEditingStepName"
+                :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
+                :on-remove="() => confirmRemoveStep(idx)"
+                @update:editingNameValue="val => editingNameValue = val"
+              />
+              <WorkflowFilterNode
+                v-else-if="step.type === 'FILTER'"
+                :selected="selectedStepKey === step.stepKey"
+                :style="nodeStyle(step, idx)"
+                :color="nodeColor(step)"
+                :name="stepDisplayName(step)"
+                :type-label="nodeType(step)"
+                :is-editing-name="editingStepKey === step.stepKey"
+                :editing-name-value="editingNameValue"
+                :step-key="step.stepKey"
+                :show-input="hasInputPort(step)"
+                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :code-full="step.code"
+                :code-preview="codePreview(step.code)"
+                :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
+                :on-select="() => selectStep(step.stepKey)"
+                :on-context-menu="(event) => onNodeContextMenu(step, idx, event)"
+                :on-start-edit-name="() => startEditingStepName(step)"
+                :on-save-edit-name="saveEditingStepName"
+                :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
+                :on-remove="() => confirmRemoveStep(idx)"
+                @update:editingNameValue="val => editingNameValue = val"
+              />
+              <WorkflowLoopNode
+                v-else-if="step.type === 'LOOP'"
+                :selected="selectedStepKey === step.stepKey"
+                :style="nodeStyle(step, idx)"
+                :color="nodeColor(step)"
+                :name="stepDisplayName(step)"
+                :type-label="nodeType(step)"
+                :is-editing-name="editingStepKey === step.stepKey"
+                :editing-name-value="editingNameValue"
+                :step-key="step.stepKey"
+                :show-input="hasInputPort(step)"
+                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :body-steps-count="step.bodySteps?.length ?? 0"
+                :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
+                :on-select="() => selectStep(step.stepKey)"
+                :on-context-menu="(event) => onNodeContextMenu(step, idx, event)"
+                :on-start-edit-name="() => startEditingStepName(step)"
+                :on-save-edit-name="saveEditingStepName"
+                :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
+                :on-remove="() => confirmRemoveStep(idx)"
+                @update:editingNameValue="val => editingNameValue = val"
+              />
+              <WorkflowIfNode
+                v-else-if="step.type === 'IF'"
+                :selected="selectedStepKey === step.stepKey"
+                :style="nodeStyle(step, idx)"
+                :color="nodeColor(step)"
+                :name="stepDisplayName(step)"
+                :type-label="nodeType(step)"
+                :is-editing-name="editingStepKey === step.stepKey"
+                :editing-name-value="editingNameValue"
+                :step-key="step.stepKey"
+                :show-input="hasInputPort(step)"
+                :source-label="stepDisplayNameByKey(step.sourceStepKey)"
+                :branches="step.branches.map(br => ({ condition: br.condition, conditionPreview: codePreview(br.condition, 28), stepsCount: br.steps?.length ?? 0 }))"
+                :else-steps-count="step.elseSteps?.length ?? 0"
+                :on-node-mouse-down="(event) => onNodeMouseDown(step, event)"
+                :on-select="() => selectStep(step.stepKey)"
+                :on-context-menu="(event) => onNodeContextMenu(step, idx, event)"
+                :on-start-edit-name="() => startEditingStepName(step)"
+                :on-save-edit-name="saveEditingStepName"
+                :on-port-mouse-down="(event) => onPortMouseDown(step, event)"
+                :on-remove="() => confirmRemoveStep(idx)"
+                @update:editingNameValue="val => editingNameValue = val"
+              />
+            </template>
             <div v-if="steps.length === 0 && triggers.length === 0" class="blueprint-empty-hint">
               Right-click on the canvas to add a trigger or step.
             </div>
@@ -734,6 +709,23 @@ function getInputPortCenterY(_step: StepDef): number {
   return PORT_CENTER_Y;
 }
 
+/** Try to read the actual output port center from the DOM so lines originate from the dot (esp. IF blocks). Fallbacks to geometric estimate. */
+function getOutputPortCenter(step: StepDef): { x: number; y: number } | null {
+  if (typeof window === 'undefined') return null;
+  const lane = getLaneElement();
+  if (!lane) return null;
+  const selector = isIfStep(step)
+    ? `.blueprint-node[data-step-key="${step.stepKey}"] .port-out-then`
+    : `.blueprint-node[data-step-key="${step.stepKey}"] .port-out`;
+  const el = lane.querySelector<HTMLElement>(selector);
+  if (!el) return null;
+  const rect = el.getBoundingClientRect();
+  const { left: laneLeft, top: laneTop, zoom } = laneOffset();
+  const x = (rect.left + rect.width / 2 - laneLeft) / zoom;
+  const y = (rect.top + rect.height / 2 - laneTop) / zoom;
+  return { x, y };
+}
+
 function connectorLine(step: StepDef): ConnectorSegment {
   if (!('sourceStepKey' in step) || !step.sourceStepKey) {
     return { x1: 0, y1: 0, x2: 0, y2: 0, inputPortY: 0, kind: 'step', fromKey: '', toKey: '' };
@@ -796,12 +788,24 @@ const connectorSegments = computed<ConnectorSegment[]>(() => {
 const ARROW_MARKER_LENGTH = 13;
 
 function connectorPath(seg: ConnectorSegment): string {
-  const dx = Math.max(40, Math.abs(seg.x2 - seg.x1) / 2);
-  const cx1 = seg.x1 + dx;
+  let x1 = seg.x1;
+  let y1 = seg.y1;
+  if (seg.kind === 'step') {
+    const src = steps.value.find(s => s.stepKey === seg.fromKey);
+    if (src && isIfStep(src)) {
+      const out = getOutputPortCenter(src);
+      if (out) {
+        x1 = out.x;
+        y1 = out.y;
+      }
+    }
+  }
+  const dx = Math.max(40, Math.abs(seg.x2 - x1) / 2);
+  const cx1 = x1 + dx;
   const endX = seg.x2 - ARROW_MARKER_LENGTH;
   const endY = seg.inputPortY ?? seg.y2;
   const cx2 = endX - dx;
-  return `M ${seg.x1} ${seg.y1} C ${cx1} ${seg.y1}, ${cx2} ${endY}, ${endX} ${endY}`;
+  return `M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${endY}, ${endX} ${endY}`;
 }
 
 function removeConnectionFromContext() {
@@ -881,8 +885,12 @@ function onConnectionMouseUp(event: MouseEvent) {
           if (!('sourceStepKey' in s)) return s;
           const any = s as any;
           const current = any.sourceStepKey as string | undefined;
-          // Clear any previous connection from this output
+          // For IF steps we allow multiple outgoing connections; for others keep at most one.
           if (current === newSourceKey && s.stepKey !== stepKey) {
+            const srcStep = steps.value.find(x => x.stepKey === newSourceKey);
+            if (srcStep && isIfStep(srcStep)) {
+              return s;
+            }
             return { ...s, sourceStepKey: undefined } as StepDef;
           }
           // Set connection on the newly targeted step
@@ -1493,7 +1501,7 @@ watch(latestVersion, () => {
 onMounted(loadAppsAndConnections);
 </script>
 
-<style scoped>
+<style>
 /* Use 100% of space below app bar: no main scroll, canvas fills remaining area */
 .workflow-page {
   display: flex;
@@ -1514,15 +1522,18 @@ onMounted(loadAppsAndConnections);
 .workflow-blueprint-card-text {
   flex: 1;
   min-height: 0;
+  height: 100%;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 
-.blueprint-canvas {
+.v-sheet.blueprint-canvas {
   position: relative;
   flex: 1;
   min-height: 300px;
+  height: 100%;
+  max-height: 100%;
   background-color: #0b1020;
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
