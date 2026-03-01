@@ -249,8 +249,21 @@ export default async function actionsRoutes(app: FastifyInstance) {
         const secrets = connection
           ? (JSON.parse(decrypt(connection.secretCipher)) as Record<string, string>)
           : {};
-        const baseUrl = (connection?.config as { baseUrl?: string })?.baseUrl ?? '';
-        const url = baseUrl + action.endpointTemplate.replace(/\{(\w+)\}/g, (_, k) => String((body.data.input ?? {})[k] ?? ''));
+        const appBaseUrl = (action.appVersion.app as { baseUrl?: string | null })?.baseUrl ?? '';
+        const connectionBaseUrl = (connection?.config as { baseUrl?: string })?.baseUrl ?? '';
+        const baseUrl =
+          action.overrideBaseUrl && action.baseUrlOverride
+            ? action.baseUrlOverride
+            : connectionBaseUrl || appBaseUrl || '';
+        const path = action.endpointTemplate.replace(/\{(\w+)\}/g, (_, k) => String((body.data.input ?? {})[k] ?? ''));
+        const url = baseUrl + path;
+        if (!url.startsWith('http://') && !url.startsWith('https://')) {
+          return reply.send({
+            success: false,
+            error: 'URL is not absolute. Set the app Base URL (Details) or Override Base URL on the action, or use a connection with a base URL.',
+            diagnostics: { baseUrl: baseUrl || '(empty)', path },
+          });
+        }
         const headers: Record<string, string> = {};
         if (action.headersTemplate && typeof action.headersTemplate === 'object') {
           for (const [k, v] of Object.entries(action.headersTemplate)) {
