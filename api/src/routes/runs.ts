@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '../db.js';
-import { executeWorkflowRun } from '../lib/runExecutor.js';
+import { executeWorkflowRun, executeSingleStep } from '../lib/runExecutor.js';
 import { addWorkflowRunJob } from '../lib/queue.js';
 import type { JwtPayload } from '../types/auth.js';
 
@@ -13,6 +13,11 @@ const runWorkflowBody = z.object({
   workflowVersionId: z.string().uuid().optional(),
   input: z.record(z.unknown()).optional(),
   idempotencyKey: z.string().optional(),
+});
+
+const runStepBody = z.object({
+  stepKey: z.string().min(1),
+  input: z.record(z.unknown()).optional(),
 });
 
 const listRunsQuery = z.object({
@@ -83,6 +88,28 @@ export default async function runsRoutes(app: FastifyInstance) {
       const enqueued = await addWorkflowRunJob(run.id);
       if (!enqueued) executeWorkflowRun(run.id).catch((err) => request.log.error(err, 'executeWorkflowRun failed'));
       return reply.status(201).send({ workflowRunId: run.id, status: run.status });
+    }
+  );
+
+  app.post<{ Params: { id: string }; Body: z.infer<typeof runStepBody> }>(
+    '/workflows/:id/run-step',
+    { preHandler: canWrite },
+    async (request, reply) => {
+      const payload = request.user as JwtPayload;
+      const body = runStepBody.safeParse(request.body ?? {});
+      if (!body.success) {
+        return reply.status(400).send({ code: 'VALIDATION_ERROR', message: 'Invalid body', details: body.error.flatten() });
+      }
+      const result = await executeSingleStep(
+        request.params.id,
+        payload.tenantId,
+        body.data.stepKey,
+        body.data.input ?? {}
+      );
+      if (result.success) {
+        return reply.send({ success: true, output: result.output });
+      }
+      return reply.send({ success: false, error: result.error });
     }
   );
 

@@ -275,3 +275,49 @@ export async function executeWorkflowRun(workflowRunId: string): Promise<void> {
     });
   }
 }
+
+/**
+ * Execute a single step from a workflow (for "Run step" in the editor).
+ * Uses the latest version (draft or published). Step receives the provided input as its source.
+ */
+export async function executeSingleStep(
+  workflowId: string,
+  tenantId: string,
+  stepKey: string,
+  input: Record<string, unknown>
+): Promise<{ success: true; output: unknown } | { success: false; error: string }> {
+  const w = await prisma.workflow.findFirst({
+    where: { id: workflowId, tenantId },
+    include: { versions: { orderBy: { version: 'desc' }, take: 1 } },
+  });
+  if (!w) return { success: false, error: 'Workflow not found' };
+  const version = w.versions[0];
+  if (!version) return { success: false, error: 'No workflow version' };
+  const graph = version.graph as { steps?: StepDef[] };
+  const steps = graph?.steps ?? [];
+  const stepDef = steps.find((s) => s.stepKey === stepKey);
+  if (!stepDef) return { success: false, error: 'Step not found' });
+
+  const sourceKey =
+    'sourceStepKey' in stepDef && typeof (stepDef as { sourceStepKey?: string }).sourceStepKey === 'string'
+      ? (stepDef as { sourceStepKey: string }).sourceStepKey.trim()
+      : null;
+  const outputsByStepKey: Record<string, unknown> = { input };
+  if (sourceKey) outputsByStepKey[sourceKey] = input;
+
+  const ctx: RunContext = {
+    workflowRunId: '',
+    tenantId,
+    runInput: input,
+    outputsByStepKey,
+    stepRunsByKey: new Map(),
+  };
+
+  try {
+    const output = await executeOneStep(stepDef, ctx);
+    return { success: true, output };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { success: false, error: message };
+  }
+}
