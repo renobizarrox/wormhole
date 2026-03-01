@@ -62,7 +62,12 @@ async function executeAppStep(
   const secrets = connection
     ? (JSON.parse(decrypt(connection.secretCipher)) as Record<string, string>)
     : {};
-  const baseUrl = (connection?.config as { baseUrl?: string })?.baseUrl ?? '';
+  const appBaseUrl = (action.appVersion.app as { baseUrl?: string | null })?.baseUrl ?? '';
+  const connectionBaseUrl = (connection?.config as { baseUrl?: string })?.baseUrl ?? '';
+  const baseUrl =
+    action.overrideBaseUrl && action.baseUrlOverride
+      ? action.baseUrlOverride
+      : connectionBaseUrl || appBaseUrl || '';
   const inputMapping = stepDef.inputMapping ?? {};
   const stepInput: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(inputMapping)) {
@@ -117,9 +122,13 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
   }
 
   const native = stepDef as MapStep | FilterStep | LoopStep | IfStep;
-  const sourceOutput = ctx.outputsByStepKey[native.sourceStepKey];
+  const sourceKey = native.sourceStepKey?.trim();
+  if (!sourceKey) {
+    throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
+  }
+  const sourceOutput = ctx.outputsByStepKey[sourceKey];
   if (sourceOutput === undefined) {
-    throw new Error(`Source step "${native.sourceStepKey}" output not found`);
+    throw new Error(`Source step "${sourceKey}" output not found`);
   }
 
   switch (native.type) {

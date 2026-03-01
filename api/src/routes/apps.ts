@@ -24,6 +24,7 @@ const updateAppBody = z.object({
   category: z.string().optional(),
   description: z.string().optional(),
   iconUrl: z.string().url().optional().nullable(),
+  baseUrl: z.string().optional().nullable(),
   status: z.enum(['Draft', 'Published', 'Deprecated']).optional(),
 });
 
@@ -140,6 +141,7 @@ export default async function appsRoutes(app: FastifyInstance) {
           ...(body.data.category !== undefined && { category: body.data.category ?? null }),
           ...(body.data.description !== undefined && { description: body.data.description ?? null }),
           ...(body.data.iconUrl !== undefined && { iconUrl: body.data.iconUrl }),
+          ...(body.data.baseUrl !== undefined && { baseUrl: body.data.baseUrl ?? null }),
           ...(body.data.status != null && { status: body.data.status }),
         },
       });

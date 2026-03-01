@@ -178,6 +178,7 @@ model App {
   category    String?
   description String?
   iconUrl     String?    @map("icon_url")
+  baseUrl     String?    @map("base_url")
   status      AppStatus  @default(Draft)
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
@@ -218,6 +219,8 @@ model Action {
   description      String?
   method           HttpMethod
   endpointTemplate String         @map("endpoint_template")
+  overrideBaseUrl  Boolean        @default(false) @map("override_base_url")
+  baseUrlOverride  String?        @map("base_url_override")
   headersTemplate  Json?          @map("headers_template")
   querySchema      Json?          @map("query_schema")
   pathSchema       Json?          @map("path_schema")
