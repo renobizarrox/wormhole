@@ -296,7 +296,7 @@ export async function executeSingleStep(
   const graph = version.graph as { steps?: StepDef[] };
   const steps = graph?.steps ?? [];
   const stepDef = steps.find((s) => s.stepKey === stepKey);
-  if (!stepDef) return { success: false, error: 'Step not found' });
+  if (!stepDef) return { success: false, error: 'Step not found' };
 
   const sourceKey =
     'sourceStepKey' in stepDef && typeof (stepDef as { sourceStepKey?: string }).sourceStepKey === 'string'
