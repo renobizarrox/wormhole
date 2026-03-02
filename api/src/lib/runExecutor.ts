@@ -146,11 +146,11 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
 
   switch (native.type) {
     case 'MAP': {
-      const result = runUserCode<unknown[]>(native.code, sourceOutput);
-      if (!Array.isArray(result)) {
+      const result = runUserCode<unknown>(native.code, sourceOutput);
+      if (result === undefined || result === null) {
         throw new Error('Map code must return an array');
       }
-      return result;
+      return Array.isArray(result) ? result : [result];
     }
     case 'FILTER': {
       const result = runUserCode<unknown[]>(native.code, sourceOutput);
