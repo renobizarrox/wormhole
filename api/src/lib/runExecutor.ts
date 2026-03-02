@@ -11,11 +11,24 @@ type RunContext = {
   stepRunsByKey: Map<string, { id: string }>;
 };
 
+/** True if code looks like a function expression so we can call it as (code)(input). */
+function isFunctionExpression(code: string): boolean {
+  const t = code.trim();
+  return (
+    t.startsWith('(') ||
+    t.startsWith('function') ||
+    t.startsWith('async ')
+  );
+}
+
 function runUserCode<T>(code: string, input: unknown): T {
+  const body = isFunctionExpression(code)
+    ? `return (${code})(input);`
+    : `return (function(input) { ${code} })(input);`;
   const fn = new Function('input', `
     "use strict";
     try {
-      return (${code})(input);
+      ${body}
     } catch (e) {
       throw new Error(\`\${e.message}\`);
     }

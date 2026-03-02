@@ -288,14 +288,31 @@ model Workflow {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  tenant        Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  versions      WorkflowVersion[]
-  triggers      Trigger[]
-  workflowRuns  WorkflowRun[]
+  tenant            Tenant               @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions          WorkflowVersion[]
+  triggers          Trigger[]
+  workflowRuns      WorkflowRun[]
+  stepOutputsCache WorkflowStepOutput[]
 
   @@unique([tenantId, key])
   @@index([tenantId])
   @@map("workflows")
+}
+
+model WorkflowStepOutput {
+  id         String   @id @default(uuid())
+  workflowId String   @map("workflow_id")
+  stepKey    String   @map("step_key")
+  success    Boolean  @map("success")
+  output     Json?    @map("output")
+  error      String?  @map("error")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  workflow Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, stepKey])
+  @@index([workflowId])
+  @@map("workflow_step_outputs")
 }
 
 model WorkflowVersion {

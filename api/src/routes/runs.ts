@@ -96,20 +96,62 @@ export default async function runsRoutes(app: FastifyInstance) {
     { preHandler: canWrite },
     async (request, reply) => {
       const payload = request.user as JwtPayload;
+      const workflowId = request.params.id;
       const body = runStepBody.safeParse(request.body ?? {});
       if (!body.success) {
         return reply.status(400).send({ code: 'VALIDATION_ERROR', message: 'Invalid body', details: body.error.flatten() });
       }
+      const w = await prisma.workflow.findFirst({
+        where: { id: workflowId, tenantId: payload.tenantId },
+      });
+      if (!w) return reply.status(404).send({ code: 'NOT_FOUND', message: 'Workflow not found' });
       const result = await executeSingleStep(
-        request.params.id,
+        workflowId,
         payload.tenantId,
         body.data.stepKey,
         body.data.input ?? {}
       );
+      await prisma.workflowStepOutput.upsert({
+        where: {
+          workflowId_stepKey: { workflowId, stepKey: body.data.stepKey },
+        },
+        create: {
+          workflowId,
+          stepKey: body.data.stepKey,
+          success: result.success,
+          output: result.success ? (result.output as Prisma.InputJsonValue) : undefined,
+          error: result.success ? undefined : result.error,
+        },
+        update: {
+          success: result.success,
+          output: result.success ? (result.output as Prisma.InputJsonValue) : undefined,
+          error: result.success ? undefined : result.error,
+        },
+      });
       if (result.success) {
         return reply.send({ success: true, output: result.output });
       }
       return reply.send({ success: false, error: result.error });
+    }
+  );
+
+  app.get<{ Params: { id: string } }>(
+    '/workflows/:id/step-outputs',
+    { preHandler: canRead },
+    async (request, reply) => {
+      const payload = request.user as JwtPayload;
+      const w = await prisma.workflow.findFirst({
+        where: { id: request.params.id, tenantId: payload.tenantId },
+        include: { stepOutputsCache: true },
+      });
+      if (!w) return reply.status(404).send({ code: 'NOT_FOUND', message: 'Workflow not found' });
+      const map: Record<string, { success: true; output: unknown } | { success: false; error: string }> = {};
+      for (const row of w.stepOutputsCache) {
+        map[row.stepKey] = row.success
+          ? { success: true, output: row.output ?? undefined }
+          : { success: false, error: row.error ?? 'Unknown error' };
+      }
+      return reply.send(map);
     }
   );
 
