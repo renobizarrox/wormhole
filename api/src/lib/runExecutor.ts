@@ -135,24 +135,39 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
   }
 
   const native = stepDef as MapStep | FilterStep | LoopStep | IfStep;
-  const sourceKey = native.sourceStepKey?.trim();
-  if (!sourceKey) {
-    throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
-  }
-  const sourceOutput = ctx.outputsByStepKey[sourceKey];
-  if (sourceOutput === undefined) {
-    throw new Error(`Source step "${sourceKey}" output not found`);
-  }
 
   switch (native.type) {
     case 'MAP': {
-      const result = runUserCode<unknown>(native.code, sourceOutput);
+      // Multi-input mapper: build an input object keyed by selected source step keys.
+      const mapNative = native as MapStep & { sourceStepKeys?: string[] };
+      const keys =
+        (Array.isArray((mapNative as any).sourceStepKeys) && (mapNative as any).sourceStepKeys.length
+          ? ((mapNative as any).sourceStepKeys as string[])
+          : (mapNative.sourceStepKey ? [mapNative.sourceStepKey] : []));
+      if (!keys.length) {
+        throw new Error(`Step "${mapNative.stepKey}" has no inputs selected. Choose one or more previous steps.`);
+      }
+      const input: Record<string, unknown> = {};
+      for (const rawKey of keys) {
+        const key = rawKey.trim();
+        if (!key) continue;
+        input[key] = ctx.outputsByStepKey[key];
+      }
+      const result = runUserCode<unknown>(mapNative.code, input);
       if (result === undefined || result === null) {
         throw new Error('Map code must return an array');
       }
       return Array.isArray(result) ? result : [result];
     }
     case 'FILTER': {
+      const sourceKey = native.sourceStepKey?.trim();
+      if (!sourceKey) {
+        throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
+      }
+      const sourceOutput = ctx.outputsByStepKey[sourceKey];
+      if (sourceOutput === undefined) {
+        throw new Error(`Source step "${sourceKey}" output not found`);
+      }
       const result = runUserCode<unknown[]>(native.code, sourceOutput);
       if (!Array.isArray(result)) {
         throw new Error('Filter code must return an array');
@@ -160,6 +175,14 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
       return result;
     }
     case 'LOOP': {
+      const sourceKey = native.sourceStepKey?.trim();
+      if (!sourceKey) {
+        throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
+      }
+      const sourceOutput = ctx.outputsByStepKey[sourceKey];
+      if (sourceOutput === undefined) {
+        throw new Error(`Source step "${sourceKey}" output not found`);
+      }
       const arr = Array.isArray(sourceOutput) ? sourceOutput : [];
       const results: unknown[] = [];
       const bodySteps = native.bodySteps ?? [];
@@ -179,6 +202,14 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
       return results;
     }
     case 'IF': {
+      const sourceKey = native.sourceStepKey?.trim();
+      if (!sourceKey) {
+        throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
+      }
+      const sourceOutput = ctx.outputsByStepKey[sourceKey];
+      if (sourceOutput === undefined) {
+        throw new Error(`Source step "${sourceKey}" output not found`);
+      }
       let chosen: StepDef[] | undefined;
       for (const branch of native.branches) {
         try {
