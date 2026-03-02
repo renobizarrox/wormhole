@@ -151,7 +151,13 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
       for (const rawKey of keys) {
         const key = rawKey.trim();
         if (!key) continue;
-        input[key] = ctx.outputsByStepKey[key];
+        // Prefer explicit runInput (used by executeSingleStep where the UI passes a pre-built input object),
+        // otherwise fall back to the outputsByStepKey map (full workflow runs).
+        const fromRunInput =
+          ctx.runInput && Object.prototype.hasOwnProperty.call(ctx.runInput, key)
+            ? (ctx.runInput as Record<string, unknown>)[key]
+            : undefined;
+        input[key] = fromRunInput !== undefined ? fromRunInput : ctx.outputsByStepKey[key];
       }
       const result = runUserCode<unknown>(mapNative.code, input);
       if (result === undefined || result === null) {
