@@ -24,6 +24,8 @@ const appStepSchema = z.object({
   actionId: z.string().uuid(),
   connectionId: z.string().uuid().optional(),
   inputMapping: z.record(z.unknown()).optional(),
+  // Optional single upstream step, used by the blueprint editor for connections and manual runs
+  sourceStepKey: z.string().optional(),
   name: z.string().optional(),
   x: z.number().optional(),
   y: z.number().optional(),
