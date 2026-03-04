@@ -69,6 +69,7 @@ const stepDefSchema: z.ZodType<unknown> = z.lazy(() =>
       stepKey: z.string(),
       type: z.literal('IF'),
       sourceStepKey: z.string().optional(),
+      sourceStepKeys: z.array(z.string()).optional(),
       branches: z.array(z.object({ condition: z.string(), steps: z.array(stepDefSchema) })),
       elseSteps: z.array(stepDefSchema).optional(),
       name: z.string().optional(),

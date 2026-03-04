@@ -208,34 +208,44 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
       return results;
     }
     case 'IF': {
-      const sourceKey = native.sourceStepKey?.trim();
-      if (!sourceKey) {
-        throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
+      const ifNative = native as IfStep & { sourceStepKeys?: string[] };
+      const keys =
+        (Array.isArray((ifNative as any).sourceStepKeys) && (ifNative as any).sourceStepKeys.length
+          ? ((ifNative as any).sourceStepKeys as string[])
+          : (ifNative.sourceStepKey ? [ifNative.sourceStepKey] : []));
+      if (!keys.length) {
+        throw new Error(`Step "${ifNative.stepKey}" has no inputs selected. Choose one or more previous steps.`);
       }
-      const sourceOutput = ctx.outputsByStepKey[sourceKey];
-      if (sourceOutput === undefined) {
-        throw new Error(`Source step "${sourceKey}" output not found`);
-      }
-      let chosen: StepDef[] | undefined;
-      for (const branch of native.branches) {
-        try {
-          if (runUserCondition(branch.condition, sourceOutput)) {
-            chosen = branch.steps;
-            break;
-          }
-        } catch {
-          // condition error: skip branch
+      const conditionInput: unknown = (() => {
+        if (keys.length === 1) {
+          const key = keys[0]?.trim();
+          if (!key) return undefined;
+          const fromRunInput =
+            ctx.runInput && Object.prototype.hasOwnProperty.call(ctx.runInput, key)
+              ? (ctx.runInput as Record<string, unknown>)[key]
+              : undefined;
+          return fromRunInput !== undefined ? fromRunInput : ctx.outputsByStepKey[key];
         }
+        const obj: Record<string, unknown> = {};
+        for (const rawKey of keys) {
+          const key = rawKey.trim();
+          if (!key) continue;
+          const fromRunInput =
+            ctx.runInput && Object.prototype.hasOwnProperty.call(ctx.runInput, key)
+              ? (ctx.runInput as Record<string, unknown>)[key]
+              : undefined;
+          obj[key] = fromRunInput !== undefined ? fromRunInput : ctx.outputsByStepKey[key];
+        }
+        return obj;
+      })();
+
+      // Evaluate the condition; the step's output is the boolean result (for run-step UI and downstream).
+      const firstCondition = native.branches && native.branches[0]?.condition;
+      if (!firstCondition || !firstCondition.trim()) {
+        return true;
       }
-      if (!chosen && native.elseSteps?.length) chosen = native.elseSteps;
-      if (!chosen || chosen.length === 0) return sourceOutput;
-      const ifCtx: RunContext = { ...ctx, outputsByStepKey: { ...ctx.outputsByStepKey } };
-      let last: unknown = sourceOutput;
-      for (const s of chosen) {
-        last = await executeOneStep(s, ifCtx);
-        ifCtx.outputsByStepKey[s.stepKey] = last;
-      }
-      return last;
+      const conditionResult = runUserCondition(firstCondition, conditionInput);
+      return conditionResult;
     }
     default:
       throw new Error(`Unknown native step type: ${(native as { type: string }).type}`);
