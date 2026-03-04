@@ -38,10 +38,13 @@ function runUserCode<T>(code: string, input: unknown): T {
 }
 
 function runUserCondition(condition: string, input: unknown): boolean {
+  const body = isFunctionExpression(condition)
+    ? `return Boolean((${condition})(input));`
+    : `return Boolean((function(input) { ${condition} })(input));`;
   const fn = new Function('input', `
     "use strict";
     try {
-      return Boolean((${condition}));
+      ${body}
     } catch (e) {
       throw new Error(\`Condition error: \${e.message}\`);
     }
