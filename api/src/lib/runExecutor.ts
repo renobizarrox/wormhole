@@ -169,7 +169,7 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
       return Array.isArray(result) ? result : [result];
     }
     case 'FILTER': {
-      const sourceKey = native.sourceStepKey?.trim();
+      const sourceKey = (native.dataStepKey ?? native.sourceStepKey)?.trim();
       if (!sourceKey) {
         throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
       }
@@ -184,7 +184,7 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
       return result;
     }
     case 'LOOP': {
-      const sourceKey = native.sourceStepKey?.trim();
+      const sourceKey = (native.dataStepKey ?? native.sourceStepKey)?.trim();
       if (!sourceKey) {
         throw new Error(`Step "${native.stepKey}" is not connected to a source. Connect it to another step or trigger.`);
       }
@@ -215,7 +215,7 @@ async function executeOneStep(stepDef: StepDef, ctx: RunContext): Promise<unknow
       const keys =
         (Array.isArray((ifNative as any).sourceStepKeys) && (ifNative as any).sourceStepKeys.length
           ? ((ifNative as any).sourceStepKeys as string[])
-          : (ifNative.sourceStepKey ? [ifNative.sourceStepKey] : []));
+          : (ifNative.dataStepKey ? [ifNative.dataStepKey] : ifNative.sourceStepKey ? [ifNative.sourceStepKey] : []));
       if (!keys.length) {
         throw new Error(`Step "${ifNative.stepKey}" has no inputs selected. Choose one or more previous steps.`);
       }
@@ -362,7 +362,9 @@ export async function executeSingleStep(
   if (!stepDef) return { success: false, error: 'Step not found' };
 
   const sourceKey =
-    'sourceStepKey' in stepDef && typeof (stepDef as { sourceStepKey?: string }).sourceStepKey === 'string'
+    'dataStepKey' in stepDef && typeof (stepDef as any).dataStepKey === 'string' && (stepDef as any).dataStepKey.trim()
+      ? (stepDef as any).dataStepKey.trim()
+      : 'sourceStepKey' in stepDef && typeof (stepDef as { sourceStepKey?: string }).sourceStepKey === 'string'
       ? (stepDef as { sourceStepKey: string }).sourceStepKey.trim()
       : null;
   const outputsByStepKey: Record<string, unknown> = { input };

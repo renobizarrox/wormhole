@@ -29,6 +29,7 @@ export interface FilterStep {
   stepKey: string;
   type: 'FILTER';
   sourceStepKey: string;
+  dataStepKey?: string;
   code: string; // JS: (input) => filtered array, e.g. "input.filter(x => x.active)"
   x?: number;
   y?: number;
@@ -42,6 +43,7 @@ export interface LoopStep {
   stepKey: string;
   type: 'LOOP';
   sourceStepKey: string;
+  dataStepKey?: string;
   bodySteps: StepDef[];
   x?: number;
   y?: number;
@@ -52,6 +54,7 @@ export interface IfStep {
   stepKey: string;
   type: 'IF';
   sourceStepKey: string;
+  dataStepKey?: string;
   branches: { condition: string; steps: StepDef[] }[]; // condition: JS expr on input, e.g. "input.count > 0"
   elseSteps?: StepDef[];
   x?: number;
