@@ -17,7 +17,7 @@ const runWorkflowBody = z.object({
 
 const runStepBody = z.object({
   stepKey: z.string().min(1),
-  input: z.record(z.unknown()).optional(),
+  input: z.unknown().optional(),
 });
 
 const listRunsQuery = z.object({
